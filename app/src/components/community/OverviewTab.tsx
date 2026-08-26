@@ -5,6 +5,8 @@ import { Card } from '../ui/Card';
 import { Typography } from '../ui/Typography';
 import { colors, spacing, radius } from '../../theme/colors';
 import { ChevronRight } from 'lucide-react-native';
+import MuscleHeatmapCard from '../overview/MuscleHeatmapCard';
+import RecentExercisesCard from '../overview/RecentExercisesCard';
 
 import type { Community, CommunityMember, CommunityChallenge, CommunityAchievement, Exercise } from '../../models/index';
 import { 
@@ -15,6 +17,8 @@ import {
 } from '../../services/community/community';
 import { getWorkoutById } from '../../services/workouts/workouts';
 import { getExercisesByIds } from '../../services/exercises/exercises';
+import { useCurrentUser } from '../../context/CurrentUser';
+import { currentUserId } from '../../services/index';
 import { getAvatarBg } from '../../utils/formatting/avatarColors';
 
 interface Props {
@@ -46,6 +50,8 @@ function isMachineExercise(exercise: Exercise): boolean {
 
 export default function OverviewTab({ community, onTabChange }: Props) {
   const navigation = useNavigation<any>();
+  const { profile } = useCurrentUser();
+  const userId = profile?.id || currentUserId() || '';
   const [loading, setLoading] = useState(true);
   const [trainingNow, setTrainingNow] = useState<CommunityMember[]>([]);
   const [activeChallenge, setActiveChallenge] = useState<CommunityChallenge | null>(null);
@@ -264,7 +270,15 @@ export default function OverviewTab({ community, onTabChange }: Props) {
           <Typography variant="caption" color={colors.primary}>View all</Typography>
           <ChevronRight size={14} color={colors.primary} />
         </TouchableOpacity>
-      </Card>
+            </Card>
+
+      {/* MUSCLES WORKED */}
+      <MuscleHeatmapCard userId={userId} />
+
+      {/* RECENT EXERCISES */}
+      <RecentExercisesCard userId={userId} />
+
+     
 
       {/* COMMUNITY INSIGHTS */}
       <Card style={styles.card}>

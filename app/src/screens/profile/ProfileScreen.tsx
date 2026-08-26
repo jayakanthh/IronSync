@@ -26,10 +26,14 @@ import {
   convertWeightToCanonical,
   convertCmToCanonical
 } from '../../utils/formatting/units';
-import { logMeasurement } from '../../services/measurements/measurements';
+import { logMeasurement, getGoals } from '../../services/measurements/measurements';
 import { todayISO } from '../../utils/formatting/dates';
 import type { MeasurementEntry, MeasurementGoal, MeasurementType, Workout, Exercise, PersonalRecord } from '../../models/index';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
+import type { MuscleId } from '../../components/anatomy';
+import { THEME_HEAT_PALETTES, DEFAULT_HEAT_PALETTE } from '../../components/anatomy';
+import { mapRawToLovableMuscleId } from '../../utils/muscleHeatmap';
+import ExpandableMeasurementCard from '../../components/measurements/ExpandableMeasurementCard';
 
 type MeTab = 'overview' | 'exercises' | 'measures' | 'photos';
 type OverviewSubTab = 'recent' | 'muscles';
@@ -140,11 +144,11 @@ function computeMuscleAnalytics(
         if (!ex) continue;
 
         const primaryMatch = mapToStandardMuscle(ex.muscleGroup) === muscle;
-        const secondaryMatch = (ex.secondaryMuscles || []).some(sm => mapToStandardMuscle(sm) === muscle);
+        const secondaryMatch = (ex.secondaryMuscles || []).some((sm: string) => mapToStandardMuscle(sm) === muscle);
 
         if (primaryMatch || secondaryMatch) {
           workoutTargetedMuscle = true;
-          const completedSets = entry.sets.filter(s => s.reps > 0);
+          const completedSets = entry.sets.filter((s: any) => s.reps > 0);
           sessionSets += completedSets.length;
 
           // Sets and volume in current calendar week
@@ -356,6 +360,11 @@ export default function ProfileScreen() {
   const [overviewSubTab, setOverviewSubTab] = useState<OverviewSubTab>('recent');
   const [expandedMuscle, setExpandedMuscle] = useState<string | null>(null);
 
+  const activeHeatPalette = useMemo(() => {
+    const themeId = (theme as any)?.id || 'signature';
+    return THEME_HEAT_PALETTES[themeId] || DEFAULT_HEAT_PALETTE;
+  }, [theme]);
+
   // Month selector state for Muscle Activity anatomy
   const [selectedMonthDate, setSelectedMonthDate] = useState<Date>(new Date());
 
@@ -368,7 +377,9 @@ export default function ProfileScreen() {
   // Measures states
   const [latestByType, setLatestByType] = useState<Record<string, MeasurementEntry | null>>({});
   const [historyByType, setHistoryByType] = useState<Record<string, MeasurementEntry[]>>({});
+  const [goalsByType, setGoalsByType] = useState<Record<string, MeasurementGoal>>({});
   const [activeGoal, setActiveGoal] = useState<MeasurementGoal | null>(null);
+  const [expandedMeasurement, setExpandedMeasurement] = useState<string | null>('weight');
   const [loadingMeasures, setLoadingMeasures] = useState(false);
   const [errorMeasures, setErrorMeasures] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
@@ -416,8 +427,8 @@ export default function ProfileScreen() {
     setLoadingMeasures(true);
     setErrorMeasures(false);
     try {
-      const [goal, ...allData] = await Promise.all([
-        getActiveGoal(uid),
+      const [allGoals, ...allData] = await Promise.all([
+        getGoals(uid, 'active'),
         ...MEASUREMENT_TILES.map(t => getMeasurementHistory(uid, t.type)),
       ]);
       const byType: Record<string, MeasurementEntry | null> = {};
@@ -427,7 +438,13 @@ export default function ProfileScreen() {
         byType[t.type] = data.length > 0 ? data[data.length - 1] : null;
         hist[t.type] = data;
       });
-      setActiveGoal(goal);
+
+      const gMap: Record<string, MeasurementGoal> = {};
+      allGoals.forEach(g => {
+        gMap[g.measurementType] = g;
+      });
+      setGoalsByType(gMap);
+      setActiveGoal(allGoals.length > 0 ? allGoals[0] : null);
       setLatestByType(byType);
       setHistoryByType(hist);
 
@@ -511,15 +528,37 @@ export default function ProfileScreen() {
   };
 
   // Monthly muscle aggregation for the Anatomy Hero
-  const monthlyMuscles = useMemo(() => {
+  const { monthlyMuscles, monthlyMuscleSetCounts } = useMemo(() => {
     const start = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth(), 1).getTime();
     const end = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
 
     const monthWorkouts = workouts.filter(w => w.createdAt >= start && w.createdAt <= end);
-    const exIds = Array.from(new Set(monthWorkouts.flatMap(w => w.entries.map(e => e.exerciseId))));
+    const exIds = Array.from(new Set(monthWorkouts.flatMap(w => w.entries.map((e: any) => e.exerciseId))));
     const exercises = exIds.map(id => exercisesMap[id]).filter(Boolean);
 
-    return aggregateMusclesFromExercises(exercises);
+    const counts: Partial<Record<MuscleId, number>> = {};
+    for (const w of monthWorkouts) {
+      for (const entry of w.entries) {
+        const ex = exercisesMap[entry.exerciseId];
+        if (!ex) continue;
+        const pId = mapRawToLovableMuscleId(ex.muscleGroup);
+        const completedSets = (entry.sets || []).filter((s: any) => (s.reps || 0) > 0).length;
+        if (pId) {
+          counts[pId] = (counts[pId] || 0) + completedSets;
+        }
+        for (const sm of (ex.secondaryMuscles ?? []) as string[]) {
+          const sId = mapRawToLovableMuscleId(sm);
+          if (sId && sId !== pId) {
+            counts[sId] = (counts[sId] || 0) + Math.round(completedSets * 0.5);
+          }
+        }
+      }
+    }
+
+    return {
+      monthlyMuscles: aggregateMusclesFromExercises(exercises),
+      monthlyMuscleSetCounts: counts,
+    };
   }, [workouts, exercisesMap, selectedMonthDate]);
 
   // Weekly muscle analytics for the Muscles Tab
@@ -671,24 +710,37 @@ export default function ProfileScreen() {
                   <View style={styles.bodyVizRow}>
                     <View style={[styles.bodyVizItem, { width: silhouetteSize }]}>
                       <Text style={styles.bodyVizLabel}>ANTERIOR (FRONT)</Text>
-                      <MuscleSilhouette primaryMuscles={monthlyMuscles.primary} secondaryMuscles={monthlyMuscles.secondary} view="front" size={silhouetteSize - 16} />
+                      <MuscleSilhouette
+                        primaryMuscles={monthlyMuscles.primary}
+                        secondaryMuscles={monthlyMuscles.secondary}
+                        setCounts={monthlyMuscleSetCounts}
+                        view="front"
+                        size={silhouetteSize - 16}
+                      />
                     </View>
                     <View style={[styles.bodyVizItem, { width: silhouetteSize }]}>
                       <Text style={styles.bodyVizLabel}>POSTERIOR (BACK)</Text>
-                      <MuscleSilhouette primaryMuscles={monthlyMuscles.primary} secondaryMuscles={monthlyMuscles.secondary} view="back" size={silhouetteSize - 16} />
+                      <MuscleSilhouette
+                        primaryMuscles={monthlyMuscles.primary}
+                        secondaryMuscles={monthlyMuscles.secondary}
+                        setCounts={monthlyMuscleSetCounts}
+                        view="back"
+                        size={silhouetteSize - 16}
+                      />
                     </View>
                   </View>
                 )}
 
-                {/* Legend */}
-                <View style={styles.legendRow}>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
-                    <Text style={styles.legendText}>Primary Focus</Text>
-                  </View>
-                  <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: theme.colors.accent }]} />
-                    <Text style={styles.legendText}>Secondary Helpers</Text>
+                {/* Heat Intensity Scale Legend */}
+                <View style={styles.legendContainer}>
+                  <View style={styles.heatScaleRow}>
+                    <Text style={[styles.heatScaleLabel, { color: theme.colors.textSecondary }]}>LOW</Text>
+                    <View style={styles.heatScaleBar}>
+                      {activeHeatPalette.map((col, idx) => (
+                        <View key={idx} style={[styles.heatScaleSegment, { backgroundColor: col }]} />
+                      ))}
+                    </View>
+                    <Text style={[styles.heatScaleLabel, { color: theme.colors.textSecondary }]}>HIGH</Text>
                   </View>
                 </View>
               </View>
@@ -1071,45 +1123,26 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* Measurements Grid */}
-              <View style={styles.measuresGrid}>
-                {MEASUREMENT_TILES.map(t => {
-                  const entry = latestByType[t.type];
+              {/* Expandable Measurement Cards List */}
+              <View style={{ gap: spacing.sm, marginTop: spacing.xs }}>
+                {MEASUREMENT_TILES.map((t) => {
                   const hist = historyByType[t.type] || [];
-                  const isWeight = t.type === 'weight';
-                  const isBodyFat = t.type === 'body_fat';
-                  
-                  let displayVal = '—';
-                  let displayUnit = t.unit;
-                  if (entry && entry.value) {
-                    if (isWeight) {
-                      displayVal = convertWeightToDisplay(entry.value, system).toString();
-                      displayUnit = getWeightUnit(system);
-                    } else if (isBodyFat) {
-                      displayVal = entry.value.toFixed(1);
-                      displayUnit = '%';
-                    } else {
-                      displayVal = convertCmToDisplay(entry.value, system).toString();
-                      displayUnit = getMeasurementUnit(system);
-                    }
-                  }
+                  const goalForType = goalsByType[t.type] || (t.type === 'weight' ? activeGoal : null);
+                  const isExpanded = expandedMeasurement === t.type;
 
                   return (
-                    <View key={t.type} style={styles.measureTileCard}>
-                      <View style={styles.meaTileHeader}>
-                        <View style={styles.meaTitleCol}>
-                          <Text style={styles.meaTitle}>{t.label}</Text>
-                          <Text style={styles.meaDate}>
-                            {entry ? new Date(entry.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No logs'}
-                          </Text>
-                        </View>
-                        {hist.length >= 2 && <MiniTrendChart history={hist} />}
-                      </View>
-                      <View style={styles.meaTileBody}>
-                        <Text style={styles.meaTileVal}>{displayVal}</Text>
-                        {displayVal !== '—' && <Text style={styles.meaTileUnit}>{displayUnit}</Text>}
-                      </View>
-                    </View>
+                    <ExpandableMeasurementCard
+                      key={t.type}
+                      tile={t}
+                      entries={hist}
+                      goal={goalForType}
+                      system={system}
+                      isExpanded={isExpanded}
+                      onToggle={() => {
+                        setExpandedMeasurement((prev) => (prev === t.type ? null : t.type));
+                      }}
+                      onSetGoal={() => navigation.navigate('GoalSettings')}
+                    />
                   );
                 })}
               </View>
@@ -1218,6 +1251,33 @@ const styles = StyleSheet.create({
   bodyVizItem: { alignItems: 'center', gap: spacing.xs },
   bodyVizLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
 
+  legendContainer: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+    alignItems: 'center',
+  },
+  heatScaleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  heatScaleBar: {
+    flexDirection: 'row',
+    height: 6,
+    width: 120,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  heatScaleSegment: {
+    flex: 1,
+    height: '100%',
+  },
+  heatScaleLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
   legendRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },

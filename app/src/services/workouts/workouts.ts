@@ -222,3 +222,32 @@ export async function getPreviousPerformance(userId: string, exerciseId: string)
   }
   return [];
 }
+
+/** Fetch user workouts within a date range (startMs to endMs). */
+export async function getUserWorkoutsInRange(
+  userId: string,
+  startMs: number,
+  endMs: number
+): Promise<Workout[]> {
+  try {
+    const q = query(
+      collection(db, 'users', userId, 'workouts'),
+      where('createdAt', '>=', startMs),
+      where('createdAt', '<=', endMs),
+      orderBy('createdAt', 'desc')
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Workout, 'id'>) }));
+  } catch (err) {
+    // Resilient in-memory fallback
+    const fallbackQ = query(
+      collection(db, 'users', userId, 'workouts'),
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    );
+    const snap = await getDocs(fallbackQ);
+    return snap.docs
+      .map((d) => ({ id: d.id, ...(d.data() as Omit<Workout, 'id'>) }))
+      .filter((w) => (w.createdAt || 0) >= startMs && (w.createdAt || 0) <= endMs);
+  }
+}
