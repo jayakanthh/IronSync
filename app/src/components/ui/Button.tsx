@@ -65,6 +65,11 @@ export const Button: React.FC<ButtonProps> = ({
     }
   };
 
+  const labelTextStyle = {
+    textTransform: (variant === 'primary' ? 'uppercase' : 'none') as 'uppercase' | 'none',
+    letterSpacing: variant === 'primary' ? 1 : 0,
+  };
+
   return (
     <TouchableOpacity
       disabled={disabled || isLoading}
@@ -87,17 +92,22 @@ export const Button: React.FC<ButtonProps> = ({
       ) : (
         <View style={styles.content}>
           {leftIcon && <View style={styles.leftIcon}>{leftIcon}</View>}
-          {label || typeof children === 'string' || typeof children === 'number' ? (
-            <Typography
-              variant="bodyBold"
-              color={getTextColor()}
-              style={{ textTransform: variant === 'primary' ? 'uppercase' : 'none', letterSpacing: variant === 'primary' ? 1 : 0 }}
-            >
-              {label ?? children}
+          {label != null && label !== '' ? (
+            <Typography variant="bodyBold" color={getTextColor()} style={labelTextStyle}>
+              {label}
             </Typography>
           ) : (
-            // Non-text children (icons, custom nodes) render as-is.
-            children
+            // Wrap EACH string/number child in <Text> (children may be a mixed
+            // array like ['Code: ', code]); real nodes (icons) pass through.
+            React.Children.map(children, (child) =>
+              typeof child === 'string' || typeof child === 'number' ? (
+                <Typography variant="bodyBold" color={getTextColor()} style={labelTextStyle}>
+                  {child}
+                </Typography>
+              ) : (
+                child
+              ),
+            )
           )}
           {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
         </View>
