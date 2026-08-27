@@ -26,8 +26,9 @@ import { useCurrentUser } from '../../context/CurrentUser';
 import { useNavigation } from '@react-navigation/native';
 import { getRelativeTime } from '../../utils/formatting/relativeTime';
 
-/** Friends (1-to-1): add by email, accept/decline requests, see your friends. */
-export default function FriendsPanel() {
+/** Friends (1-to-1): add by username, accept/decline requests, see your friends.
+ *  `searchOpen` reveals the "Add Friends" search box — toggled from the header icon. */
+export default function FriendsPanel({ searchOpen = false }: { searchOpen?: boolean }) {
   const { profile } = useCurrentUser();
   const navigation = useNavigation<any>();
 
@@ -68,7 +69,8 @@ export default function FriendsPanel() {
           }
           
           details[friend.friendId] = {
-            username: userDoc?.username ? `@${userDoc.username}` : '@lifter',
+            // username is stored with a leading '@' already — don't prepend another
+            username: userDoc?.username || '@lifter',
             lastActiveText: lastActiveTime ? `Active ${getRelativeTime(lastActiveTime)}` : 'Online',
             recentWorkoutText: recentText
           };
@@ -133,21 +135,24 @@ export default function FriendsPanel() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {/* Search Users by Username */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Add Friends</Text>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={styles.input}
-            placeholder="Search by username..."
-            placeholderTextColor={colors.textMuted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
+      {/* Search Users by Username — revealed via the header "add friend" icon */}
+      {searchOpen && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Add Friends</Text>
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.input}
+              placeholder="Search by username..."
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Search Results */}
       {searchQuery.trim() !== '' && (

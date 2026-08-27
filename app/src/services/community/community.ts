@@ -100,14 +100,14 @@ export async function createCommunity(
 
 /** Browse public communities (for discovery). */
 export async function discoverCommunities(max = 30): Promise<Community[]> {
-  const q = query(
-    collection(db, 'communities'),
-    where('privacy', '==', 'public'),
-    orderBy('memberCount', 'desc'),
-    limit(max),
-  );
+  // Filter by privacy only, then sort by memberCount client-side — avoids the
+  // (privacy + memberCount) composite Firestore index.
+  const q = query(collection(db, 'communities'), where('privacy', '==', 'public'));
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Community, 'id'>) }));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as Omit<Community, 'id'>) }))
+    .sort((a, b) => (b.memberCount ?? 0) - (a.memberCount ?? 0))
+    .slice(0, max);
 }
 
 /** Search communities by name (client-side filter on top of discoverCommunities). */

@@ -10,11 +10,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { Plus, Search, Users, Award, Dumbbell, Shield, Compass } from 'lucide-react-native';
+import { Plus, Users, Compass, UserPlus } from 'lucide-react-native';
 import { colors, spacing, radius, useTheme } from '../../theme/colors';
 import { Typography } from '../../components/ui/Typography';
 import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { getMyCommunities, getMyGroups, getStreakBoard } from '../../services/index';
 import type { Community, Group, StreakBoardEntry } from '../../models/index';
@@ -27,6 +26,7 @@ export default function CommunityScreen() {
   const { profile } = useCurrentUser();
 
   const [activeTab, setActiveTab] = useState<'communities' | 'friends'>('communities');
+  const [friendSearchOpen, setFriendSearchOpen] = useState(false);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [crews, setCrews] = useState<Group[]>([]);
   const [crewStreaks, setCrewStreaks] = useState<Record<string, StreakBoardEntry[]>>({});
@@ -83,34 +83,6 @@ export default function CommunityScreen() {
 
     return (
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Join/Create Banner CTA */}
-        <Card style={styles.ctaCard}>
-          <Typography variant="h2" style={styles.ctaTitle}>Find Your Fitness Space</Typography>
-          <Typography variant="body" color={colors.textMuted} style={styles.ctaSub}>
-            Join your gym, apartment, college, or create a private fitness group to train together.
-          </Typography>
-          <View style={styles.ctaButtonRow}>
-            <Button
-              variant="primary"
-              size="sm"
-              onPress={() => navigation.navigate('CommunityDiscover')}
-              style={styles.bannerBtn}
-            >
-              <Compass size={14} color={colors.primaryDark} style={{ marginRight: 6 }} />
-              Discover Spaces
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() => navigation.navigate('CommunityCreate')}
-              style={styles.bannerBtn}
-            >
-              <Plus size={14} color={colors.primary} style={{ marginRight: 6 }} />
-              Create Space
-            </Button>
-          </View>
-        </Card>
-
         {/* My Communities Section */}
         <View style={styles.sectionHeader}>
           <Typography variant="h2">My Spaces ({communities.length})</Typography>
@@ -118,7 +90,7 @@ export default function CommunityScreen() {
         {communities.length === 0 ? (
           <Card style={styles.emptyCard}>
             <Typography variant="body" color={colors.textMuted} style={{ textAlign: 'center' }}>
-              You haven't joined any Spaces yet. Use the discover button to find your gym or college!
+              You haven't joined any Spaces yet. Tap the compass icon at the top to discover your gym or college, or the + to create one.
             </Typography>
           </Card>
         ) : (
@@ -201,10 +173,28 @@ export default function CommunityScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.colors.background }]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Typography variant="h1" color={theme.colors.textPrimary}>Community Hub</Typography>
-        <Typography variant="caption" color={theme.colors.textSecondary}>Connect, share, and train together</Typography>
+      {/* Header with tab-aware action icons (top-right, like the home header) */}
+      <View style={styles.headerRow}>
+        <View style={{ flex: 1 }}>
+          <Typography variant="h1" color={theme.colors.textPrimary}>Community Hub</Typography>
+          <Typography variant="caption" color={theme.colors.textSecondary}>Connect, share, and train together</Typography>
+        </View>
+        <View style={styles.headerActions}>
+          {activeTab === 'communities' ? (
+            <>
+              <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('CommunityDiscover')}>
+                <Compass size={22} color={theme.colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('CommunityCreate')}>
+                <Plus size={22} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity style={styles.iconBtn} onPress={() => setFriendSearchOpen((v) => !v)}>
+              <UserPlus size={22} color={friendSearchOpen ? theme.colors.primary : theme.colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Tabs */}
@@ -214,7 +204,7 @@ export default function CommunityScreen() {
           onPress={() => setActiveTab('communities')}
         >
           <Typography variant="bodyBold" color={activeTab === 'communities' ? theme.colors.primary : theme.colors.textSecondary}>
-            Spaces
+            Crew
           </Typography>
         </TouchableOpacity>
         <TouchableOpacity
@@ -227,7 +217,7 @@ export default function CommunityScreen() {
         </TouchableOpacity>
       </View>
 
-      {activeTab === 'communities' ? renderCommunitiesTab() : <FriendsPanel />}
+      {activeTab === 'communities' ? renderCommunitiesTab() : <FriendsPanel searchOpen={friendSearchOpen} />}
     </View>
   );
 }
@@ -237,9 +227,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg,
   },
-  header: {
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  iconBtn: {
+    padding: 8,
+    borderRadius: 999,
   },
   tabsContainer: {
     flexDirection: 'row',
@@ -266,26 +267,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
     paddingBottom: 100, // Safe distance for FAB
-  },
-  ctaCard: {
-    backgroundColor: 'rgba(72, 187, 149, 0.1)',
-    borderColor: 'rgba(72, 187, 149, 0.2)',
-    padding: spacing.md,
-    borderRadius: radius.lg,
-  },
-  ctaTitle: {
-    marginBottom: spacing.xs,
-  },
-  ctaSub: {
-    marginBottom: spacing.md,
-    lineHeight: 20,
-  },
-  ctaButtonRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  bannerBtn: {
-    flex: 1,
   },
   sectionHeader: {
     marginTop: spacing.xs,
