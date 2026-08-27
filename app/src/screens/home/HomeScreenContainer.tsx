@@ -5,6 +5,7 @@ import HomeScreen from './HomeScreen';
 import { initialUserProfile } from '../../data/mockData';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { userToProfile } from '../../adapters/adapters';
+import { promptStartWorkout } from '../../utils/startWorkout';
 import { TopHeader } from '../../components/common/TopHeader';
 import {
   getPlan,
@@ -186,7 +187,11 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
         todayTitle={today?.title}
         todaySubtitle={today?.subtitle}
         onFindMatchClick={() => navigation.navigate('Workouts')} // Fallback: Route to routines
-        onStartTodayPlan={() => navigation.navigate('Workouts', { screen: 'LogWorkout' })}
+        onStartTodayPlan={() =>
+          promptStartWorkout(profile, (params) =>
+            navigation.navigate('Workouts', { screen: 'LogWorkout', params }),
+          )
+        }
         onSelectBuddyWorkout={(buddy) => {
           // If buddy is training, creator invites B or joins
           navigation.navigate('Community');

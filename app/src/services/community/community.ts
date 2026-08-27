@@ -260,7 +260,14 @@ export async function setMemberTrainingStatus(
     updateData.activeExerciseIds = [];
   }
 
-  await updateDoc(doc(db, 'communities', communityId, 'members', userId), updateData);
+  // Only update if the user is actually a member of this community. Profiles can
+  // reference a community without a matching member doc (seed/data drift), and
+  // updateDoc on a missing doc throws "No document to update".
+  const memberRef = doc(db, 'communities', communityId, 'members', userId);
+  const memberSnap = await getDoc(memberRef);
+  if (!memberSnap.exists()) return;
+
+  await updateDoc(memberRef, updateData);
   // Update community-level training count
   await updateDoc(doc(db, 'communities', communityId), {
     trainingNowCount: increment(isTrainingNow ? 1 : -1),

@@ -9,6 +9,7 @@ import RoutineLibraryScreen from './RoutineLibraryScreen';
 import ExerciseLibraryScreen from './ExerciseLibraryScreen';
 import { getExercises, searchExercises, getMyPlans, getPublicPlans, getPlan, clonePlan, setActivePlan } from '../../services/index';
 import { exerciseToView, planToRoutine } from '../../adapters/adapters';
+import { promptStartWorkout } from '../../utils/startWorkout';
 import { useCurrentUser } from '../../context/CurrentUser';
 import type { Routine, Exercise } from '../../types/ironsync';
 
@@ -87,21 +88,17 @@ export default function WorkoutsScreen({
         <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>Start training splits or log free workouts</Text>
       </View>
 
-      {/* Start Workout Primary CTA - Free Workout */}
+      {/* Start Workout — prompts Free Workout vs Follow Default Plan */}
       <TouchableOpacity
         style={[styles.startWorkoutCta, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.primary }]}
         activeOpacity={0.9}
-        onPress={() => {
-          // Navigates immediately to LogWorkout with empty exercises and starts timer
-          navigation.navigate('LogWorkout', {
-            exercises: [],
-            sourceLabel: 'Free Workout',
-          });
-        }}
+        onPress={() =>
+          promptStartWorkout(profile, (params) => navigation.navigate('LogWorkout', params))
+        }
       >
         <View style={styles.ctaContent}>
           <Play size={20} color={theme.colors.primaryForeground} fill={theme.colors.primaryForeground} />
-          <Text style={[styles.startWorkoutText, { color: theme.colors.primaryForeground }]}>+ Start Free Workout</Text>
+          <Text style={[styles.startWorkoutText, { color: theme.colors.primaryForeground }]}>Start Workout</Text>
         </View>
       </TouchableOpacity>
 

@@ -29,68 +29,8 @@ export const navigationRef = createNavigationContainerRef<any>();
 const Tab = createBottomTabNavigator();
 const RootStack = createNativeStackNavigator();
 
-const FloatingActionMenu = ({ visible, onClose, navigation }: { visible: boolean, onClose: () => void, navigation: any }) => {
-  const { theme } = useTheme();
-  if (!visible) return null;
-
-  return (
-    <Modal visible={visible} transparent animationType="fade">
-      <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={[styles.fabMenuContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-          <View style={[styles.fabMenuHeader, { borderBottomColor: theme.colors.border }]}>
-            <Typography variant="caption" color={theme.colors.textMuted}>QUICK ACTIONS</Typography>
-            <TouchableOpacity onPress={onClose}>
-              <X size={18} color={theme.colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Primary CTA: Start Workout */}
-          <TouchableOpacity
-            style={[styles.fabPrimaryItem, { backgroundColor: theme.colors.primary }]}
-            activeOpacity={0.9}
-            onPress={() => {
-              onClose();
-              // Launch empty free-form workout logger with timer started immediately
-              navigation.navigate('Workouts', {
-                screen: 'LogWorkout',
-                params: { exercises: [], sourceLabel: 'Free Workout' }
-              });
-            }}
-          >
-            <View style={styles.fabPrimaryLeft}>
-              <Dumbbell size={22} color={theme.colors.primaryForeground} strokeWidth={2.5} />
-              <View style={{ marginLeft: 12 }}>
-                <Text style={[styles.fabPrimaryTitle, { color: theme.colors.primaryForeground }]}>🏋️ START WORKOUT</Text>
-                <Text style={[styles.fabPrimarySubtitle, { color: theme.colors.primaryForeground + 'b3' }]}>Start a workout now • Timer starts immediately</Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-
-          {/* Secondary CTA: Track Food */}
-          <TouchableOpacity
-            style={[styles.fabSecondaryItem, { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.border }]}
-            activeOpacity={0.8}
-            onPress={() => {
-              onClose();
-              navigation.navigate('Nutrition');
-            }}
-          >
-            <View style={[styles.fabIconBox, { backgroundColor: 'rgba(249, 115, 22, 0.15)' }]}>
-              <Utensils size={18} color={theme.colors.warning} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.fabSecondaryTitle, { color: theme.colors.textPrimary }]}>🍎 TRACK FOOD</Text>
-              <Text style={[styles.fabSecondarySubtitle, { color: theme.colors.textSecondary }]}>Log your food, custom products and macros</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-      </TouchableOpacity>
-    </Modal>
-  );
-};
 
 function MainTabs() {
-  const [showFab, setShowFab] = useState(false);
   const { theme } = useTheme();
 
   return (
@@ -119,27 +59,16 @@ function MainTabs() {
           }}
         />
 
-        {/* Custom Middle Button */}
-        <Tab.Screen 
-          name="Action" 
-          component={View} 
+        <Tab.Screen
+          name="Diet"
+          component={NutritionScreen}
           options={{
-            tabBarButton: () => (
-              <View style={styles.fabContainer}>
-                <TouchableOpacity 
-                  activeOpacity={0.8} 
-                  style={[styles.fabButton, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.primary }]}
-                  onPress={() => setShowFab(true)}
-                >
-                  <Plus size={24} color={theme.colors.primaryForeground} strokeWidth={2.5} />
-                </TouchableOpacity>
-              </View>
-            ),
+            tabBarIcon: ({ color }) => <Utensils size={20} color={color} />,
           }}
         />
 
-        <Tab.Screen 
-          name="Community" 
+        <Tab.Screen
+          name="Community"
           component={CommunityStack} 
           options={{
             tabBarIcon: ({ color }) => <Users size={20} color={color} />,
@@ -153,8 +82,6 @@ function MainTabs() {
           }}
         />
       </Tab.Navigator>
-
-      <FloatingActionMenu visible={showFab} onClose={() => setShowFab(false)} navigation={navigationRef} />
     </View>
   );
 }
