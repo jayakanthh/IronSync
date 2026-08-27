@@ -4,7 +4,6 @@ import {
   doc,
   getDocs,
   onSnapshot,
-  orderBy,
   query,
   updateDoc,
   where,
@@ -29,13 +28,13 @@ export async function createNotification(
 
 /** Get list of notifications for a user, newest first. */
 export async function getNotifications(userId: string): Promise<AppNotification[]> {
-  const q = query(
-    collection(db, 'notifications'),
-    where('userId', '==', userId),
-    orderBy('createdAt', 'desc'),
-  );
+  // Filter by user only, then sort client-side by createdAt desc. This avoids
+  // needing a (userId + createdAt) composite Firestore index.
+  const q = query(collection(db, 'notifications'), where('userId', '==', userId));
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AppNotification, 'id'>) }));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as Omit<AppNotification, 'id'>) }))
+    .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /** Subscribe to real-time notification updates. */
@@ -44,19 +43,19 @@ export function subscribeToNotifications(
   onUpdate: (notifications: AppNotification[]) => void,
   onError?: (err: Error) => void,
 ) {
-  const q = query(
-    collection(db, 'notifications'),
-    where('userId', '==', userId),
-    orderBy('createdAt', 'desc'),
-  );
+  // Filter by user only, then sort client-side (see getNotifications) to avoid
+  // a (userId + createdAt) composite Firestore index.
+  const q = query(collection(db, 'notifications'), where('userId', '==', userId));
 
   return onSnapshot(
     q,
     (snap) => {
-      const list = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<AppNotification, 'id'>),
-      }));
+      const list = snap.docs
+        .map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<AppNotification, 'id'>),
+        }))
+        .sort((a, b) => b.createdAt - a.createdAt);
       onUpdate(list);
     },
     (err) => {

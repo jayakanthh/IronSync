@@ -620,7 +620,8 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.userInfo}>
             <Text style={styles.userName}>{profile.displayName || 'Iron Athlete'}</Text>
-            <Text style={styles.userSub}>@{profile.username || 'athlete'}</Text>
+            {/* username is stored with a leading '@' already — don't prepend another */}
+            <Text style={styles.userSub}>{profile.username || '@athlete'}</Text>
           </View>
         </View>
         <View style={styles.profileActions}>

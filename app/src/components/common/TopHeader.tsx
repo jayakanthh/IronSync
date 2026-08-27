@@ -50,11 +50,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </TouchableOpacity>
         
         <View style={styles.logoContainer}>
-          <Image
-            source={require('../../../assets/android-icon-foreground.png')}
-            style={[styles.logoImage, { tintColor: theme.decorations.logoTint }]}
-            resizeMode="contain"
-          />
           <Typography variant="h1" color={theme.colors.textPrimary} style={styles.logoText}>
             Iron<Typography variant="h1" color={theme.colors.primary}>Sync</Typography>
           </Typography>
