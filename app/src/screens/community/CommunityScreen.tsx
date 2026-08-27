@@ -26,7 +26,6 @@ export default function CommunityScreen() {
   const { profile } = useCurrentUser();
 
   const [activeTab, setActiveTab] = useState<'communities' | 'friends'>('communities');
-  const [friendSearchOpen, setFriendSearchOpen] = useState(false);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [crews, setCrews] = useState<Group[]>([]);
   const [crewStreaks, setCrewStreaks] = useState<Record<string, StreakBoardEntry[]>>({});
@@ -190,8 +189,8 @@ export default function CommunityScreen() {
               </TouchableOpacity>
             </>
           ) : (
-            <TouchableOpacity style={styles.iconBtn} onPress={() => setFriendSearchOpen((v) => !v)}>
-              <UserPlus size={22} color={friendSearchOpen ? theme.colors.primary : theme.colors.textSecondary} />
+            <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.navigate('AddFriends')}>
+              <UserPlus size={22} color={theme.colors.textSecondary} />
             </TouchableOpacity>
           )}
         </View>
@@ -217,7 +216,7 @@ export default function CommunityScreen() {
         </TouchableOpacity>
       </View>
 
-      {activeTab === 'communities' ? renderCommunitiesTab() : <FriendsPanel searchOpen={friendSearchOpen} />}
+      {activeTab === 'communities' ? renderCommunitiesTab() : <FriendsPanel />}
     </View>
   );
 }

@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useFocusEffect, useRoute, useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { User as UserIcon, Dumbbell, Calendar, Clock, TrendingUp, Zap, UserPlus, UserMinus, Eye, Award } from "lucide-react-native";
+import { ChevronLeft, Dumbbell, UserPlus, Eye, Flame, Trophy, Lock } from "lucide-react-native";
 import { colors, spacing, radius } from "../../theme/colors";
 import { useCurrentUser } from "../../context/CurrentUser";
 import {
@@ -26,6 +26,8 @@ import {
   getFollowing,
   getWorkoutHistory,
   getIncomingRequests,
+  effectiveCurrentStreak,
+  todayISO,
 } from "../../services/index";
 import type { User, Workout } from "../../models/index";
 
@@ -199,12 +201,27 @@ export default function UserProfileScreen() {
 
   const initials = (targetUser.displayName || "?").slice(0, 2).toUpperCase();
 
+  // Stats are shown to FRIENDS only, and only if this user allows it
+  // (statsVisibleToFriends defaults to visible when unset).
+  const isFriend = friendshipState === "friends";
+  const statsShared = targetUser.statsVisibleToFriends !== false;
+  const targetStreak = effectiveCurrentStreak(
+    {
+      currentStreak: targetUser.currentStreak ?? 0,
+      longestStreak: targetUser.longestStreak ?? 0,
+      lastTrainedDate: targetUser.lastTrainedDate,
+    },
+    targetUser.trainingDays ?? [],
+    todayISO(),
+  );
+  const targetBest = Math.max(targetUser.longestStreak ?? 0, targetStreak);
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backBtnText}>{"?"}</Text>
+          <ChevronLeft size={26} color={colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>User Profile</Text>
         <View style={{ width: 32 }} />
@@ -287,6 +304,34 @@ export default function UserProfileScreen() {
             </View>
           )}
         </View>
+
+        {/* Stats — friends only, respecting the other user's visibility setting */}
+        {profile && profile.id !== targetUser.id && isFriend && (
+          statsShared ? (
+            <>
+              <Text style={styles.sectionLabel}>STATS</Text>
+              <View style={styles.statsCardsRow}>
+                <View style={styles.statCardBox}>
+                  <Flame size={20} color={colors.primary} />
+                  <Text style={styles.statCardVal}>{targetStreak}</Text>
+                  <Text style={styles.statCardLbl}>CURRENT STREAK</Text>
+                </View>
+                <View style={styles.statCardBox}>
+                  <Trophy size={20} color={colors.milestone} />
+                  <Text style={styles.statCardVal}>{targetBest}</Text>
+                  <Text style={styles.statCardLbl}>BEST STREAK</Text>
+                </View>
+              </View>
+            </>
+          ) : (
+            <View style={styles.privateStats}>
+              <Lock size={16} color={colors.textMuted} />
+              <Text style={styles.privateStatsText}>
+                {targetUser.displayName} keeps their stats private.
+              </Text>
+            </View>
+          )
+        )}
 
         {/* Workouts Feed Section */}
         <Text style={styles.sectionLabel}>RECENT WORKOUTS</Text>
@@ -417,6 +462,48 @@ const styles = StyleSheet.create({
   },
   followBtnActive: {
     borderColor: colors.primary,
+  },
+  statsCardsRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  statCardBox: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    alignItems: "flex-start",
+    gap: 6,
+  },
+  statCardVal: {
+    color: colors.text,
+    fontSize: 26,
+    fontWeight: "900",
+  },
+  statCardLbl: {
+    color: colors.textMuted,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  privateStats: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  privateStatsText: {
+    color: colors.textMuted,
+    fontSize: 13,
+    flex: 1,
   },
   sectionLabel: {
     color: colors.textMuted,

@@ -26,7 +26,8 @@ export interface User {
   communityIds?: string[]; // communities (gym, college, etc.) — distinct from crews
   savedPlanIds?: string[]; // public plans the user has bookmarked (Workouts > Saved tab)
   unitSystem?: 'metric' | 'imperial';
-  
+  statsVisibleToFriends?: boolean; // let friends see your streak/stats on your profile (default: visible)
+
   username?: string;
   normalizedUsername?: string;
   

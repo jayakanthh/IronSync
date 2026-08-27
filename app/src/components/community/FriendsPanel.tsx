@@ -4,36 +4,23 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { ChevronRight } from 'lucide-react-native';
 import { colors, spacing, radius } from '../../theme/colors';
 import { Card } from '../ui/Card';
-import type { FriendRequest, User } from '../../models/index';
-import {
-  acceptRequest,
-  declineRequest,
-  getFriends,
-  getIncomingRequests,
-  removeFriend,
-  searchUsersByUsername,
-  getUser,
-  getWorkoutHistory,
-} from '../../services/index';
+import { getFriends, getUser, getWorkoutHistory } from '../../services/index';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { useNavigation } from '@react-navigation/native';
 import { getRelativeTime } from '../../utils/formatting/relativeTime';
 
-/** Friends (1-to-1): add by username, accept/decline requests, see your friends.
- *  `searchOpen` reveals the "Add Friends" search box — toggled from the header icon. */
-export default function FriendsPanel({ searchOpen = false }: { searchOpen?: boolean }) {
+/** Friends (1-to-1) list. Adding friends & managing requests live on the
+ *  dedicated Add Friends page (opened from the Friends header icon). */
+export default function FriendsPanel() {
   const { profile } = useCurrentUser();
   const navigation = useNavigation<any>();
 
   const [friends, setFriends] = useState<{ friendId: string; name: string; since: number }[]>([]);
-  const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [friendDetails, setFriendDetails] = useState<Record<string, {
     username: string;
@@ -41,18 +28,12 @@ export default function FriendsPanel({ searchOpen = false }: { searchOpen?: bool
     recentWorkoutText: string;
   }>>({});
 
-  // Search states
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [searching, setSearching] = useState(false);
-
   const load = useCallback(async () => {
     if (!profile) return;
     setLoading(true);
     try {
-      const [f, r] = await Promise.all([getFriends(profile.id), getIncomingRequests(profile.id)]);
+      const f = await getFriends(profile.id);
       setFriends(f);
-      setRequests(r);
 
       const details: Record<string, any> = {};
       await Promise.all(f.map(async (friend) => {
@@ -90,41 +71,6 @@ export default function FriendsPanel({ searchOpen = false }: { searchOpen?: bool
     load();
   }, [load]);
 
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      return;
-    }
-    setSearching(true);
-    const delay = setTimeout(async () => {
-      try {
-        const results = await searchUsersByUsername(searchQuery);
-        // Exclude current user from search results
-        setSearchResults(results.filter((u) => u.id !== profile?.id));
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setSearching(false);
-      }
-    }, 450);
-
-    return () => clearTimeout(delay);
-  }, [searchQuery, profile?.id]);
-
-  const onAccept = async (req: FriendRequest) => {
-    await acceptRequest(req);
-    load();
-  };
-  const onDecline = async (id: string) => {
-    await declineRequest(id);
-    load();
-  };
-  const onRemove = async (friendId: string) => {
-    if (!profile) return;
-    await removeFriend(profile.id, friendId);
-    load();
-  };
-
   if (loading) {
     return (
       <View style={styles.center}>
@@ -135,74 +81,6 @@ export default function FriendsPanel({ searchOpen = false }: { searchOpen?: bool
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {/* Search Users by Username — revealed via the header "add friend" icon */}
-      {searchOpen && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Add Friends</Text>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              placeholder="Search by username..."
-              placeholderTextColor={colors.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoFocus
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
-        </View>
-      )}
-
-      {/* Search Results */}
-      {searchQuery.trim() !== '' && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Search Results</Text>
-          {searching ? (
-            <ActivityIndicator color={colors.primary} style={{ marginVertical: 12 }} />
-          ) : searchResults.length === 0 ? (
-            <Text style={styles.empty}>No users found with that username.</Text>
-          ) : (
-            searchResults.map((user) => (
-              <TouchableOpacity
-                key={user.id}
-                style={styles.searchResultRow}
-                onPress={() => navigation.navigate('UserProfile', { userId: user.id })}
-                activeOpacity={0.7}
-              >
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{(user.displayName || '?').slice(0, 2).toUpperCase()}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.searchResultName}>{user.displayName}</Text>
-                  <Text style={styles.searchResultUsername}>{user.username || '@lifter'}</Text>
-                </View>
-                <ChevronRight size={16} color={colors.textMuted} />
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
-      )}
-
-      {/* Incoming requests */}
-      {requests.length > 0 && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Requests</Text>
-          {requests.map((r) => (
-            <View key={r.id} style={styles.reqRow}>
-              <Text style={styles.name}>{r.fromName}</Text>
-              <View style={styles.reqActions}>
-                <TouchableOpacity style={styles.accept} onPress={() => onAccept(r)}>
-                  <Text style={styles.acceptText}>Accept</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => onDecline(r.id)}>
-                  <Text style={styles.decline}>Decline</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
 
       {/* Friends list */}
       <Text style={styles.section}>YOUR FRIENDS ({friends.length})</Text>

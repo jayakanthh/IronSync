@@ -41,6 +41,9 @@ export default function SettingsScreen() {
   // Notification toggle: placeholder (no push yet)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
+  // Stats visibility: friends can see your streak on your profile (default on).
+  const [statsVisible, setStatsVisible] = useState(profile?.statsVisibleToFriends !== false);
+
   // Username edit states
   const [editingUsername, setEditingUsername] = useState(false);
   const [newUsername, setNewUsername] = useState(profile?.username ? normalizeUsername(profile.username) : "");
@@ -123,6 +126,18 @@ export default function SettingsScreen() {
         "You will no longer receive workout reminders or social alerts.",
         [{ text: "OK" }],
       );
+    }
+  };
+
+  const handleStatsVisibilityToggle = async (val: boolean) => {
+    if (!profile) return;
+    setStatsVisible(val); // optimistic
+    try {
+      await updateUser(profile.id, { statsVisibleToFriends: val });
+      await refresh();
+    } catch {
+      setStatsVisible(!val); // revert on failure
+      Alert.alert("Error", "Could not update your privacy setting. Please try again.");
     }
   };
 
@@ -304,17 +319,20 @@ export default function SettingsScreen() {
         {/* Privacy */}
         <Text style={styles.sectionLabel}>PRIVACY</Text>
         <View style={styles.card}>
-          <View style={styles.disabledRow}>
+          <View style={styles.toggleRow}>
             <View style={styles.toggleLeft}>
-              <Shield size={16} color={colors.textMuted} />
+              <Shield size={16} color={colors.primary} />
               <View>
-                <Text style={[styles.toggleLabel, { color: colors.textMuted }]}>Privacy Settings</Text>
-                <Text style={styles.toggleSub}>Coming soon</Text>
+                <Text style={styles.toggleLabel}>Show stats to friends</Text>
+                <Text style={styles.toggleSub}>Friends can see your streak on your profile</Text>
               </View>
             </View>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>Soon</Text>
-            </View>
+            <Switch
+              value={statsVisible}
+              onValueChange={handleStatsVisibilityToggle}
+              trackColor={{ false: colors.surfaceAlt, true: colors.primary + "80" }}
+              thumbColor={statsVisible ? colors.primary : colors.textMuted}
+            />
           </View>
         </View>
 
