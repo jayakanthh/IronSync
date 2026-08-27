@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Plus, Search, Users, Award, Dumbbell, Shield, Compass } from 'lucide-react-native';
-import { colors, spacing, radius } from '../../theme/colors';
+import { colors, spacing, radius, useTheme } from '../../theme/colors';
 import { Typography } from '../../components/ui/Typography';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -22,6 +22,7 @@ import FriendsPanel from '../../components/community/FriendsPanel';
 
 export default function CommunityScreen() {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
   const navigation = useNavigation<any>();
   const { profile } = useCurrentUser();
 
@@ -199,28 +200,28 @@ export default function CommunityScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: insets.top, backgroundColor: theme.colors.background }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Typography variant="h1">Community Hub</Typography>
-        <Typography variant="caption" color={colors.textMuted}>Connect, share, and train together</Typography>
+        <Typography variant="h1" color={theme.colors.textPrimary}>Community Hub</Typography>
+        <Typography variant="caption" color={theme.colors.textSecondary}>Connect, share, and train together</Typography>
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabsContainer}>
+      <View style={[styles.tabsContainer, { borderBottomColor: theme.colors.border }]}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'communities' && styles.activeTab]}
+          style={[styles.tab, activeTab === 'communities' && [styles.activeTab, { borderBottomColor: theme.colors.primary }]]}
           onPress={() => setActiveTab('communities')}
         >
-          <Typography variant="bodyBold" color={activeTab === 'communities' ? colors.primary : colors.textMuted}>
+          <Typography variant="bodyBold" color={activeTab === 'communities' ? theme.colors.primary : theme.colors.textSecondary}>
             Spaces
           </Typography>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'friends' && styles.activeTab]}
+          style={[styles.tab, activeTab === 'friends' && [styles.activeTab, { borderBottomColor: theme.colors.primary }]]}
           onPress={() => setActiveTab('friends')}
         >
-          <Typography variant="bodyBold" color={activeTab === 'friends' ? colors.primary : colors.textMuted}>
+          <Typography variant="bodyBold" color={activeTab === 'friends' ? theme.colors.primary : theme.colors.textSecondary}>
             Friends
           </Typography>
         </TouchableOpacity>

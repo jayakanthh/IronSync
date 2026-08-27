@@ -1,10 +1,10 @@
 import React, { useRef, useState } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, TouchableOpacity, StyleSheet, Modal, Text } from 'react-native';
 import { Home, Dumbbell, Users, Utensils, Plus, X, Award, TrendingUp, User, Calendar } from 'lucide-react-native';
-import { colors, radius } from '../theme/colors';
+import { colors, radius, useTheme } from '../theme/colors';
 import { Typography } from '../components/ui/Typography';
 
 import HomeScreenContainer from '../screens/home/HomeScreenContainer';
@@ -20,42 +20,31 @@ import NotificationsModal from '../screens/settings/NotificationsModal';
 import StrengthPRScreen from '../screens/measurements/StrengthPRScreen';
 import UserProfileScreen from '../screens/community/UserProfileScreen';
 import WorkoutDetailScreen from '../screens/workouts/WorkoutDetailScreen';
+import ExerciseDetailScreen from '../screens/workouts/ExerciseDetailScreen';
 
 export const navigationRef = createNavigationContainerRef<any>();
-
 
 const Tab = createBottomTabNavigator();
 const RootStack = createNativeStackNavigator();
 
-const navTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    background: colors.bg,
-    card: 'rgba(18, 21, 23, 0.95)',
-    border: colors.border,
-    primary: colors.primary,
-    text: colors.text,
-  },
-};
-
 const FloatingActionMenu = ({ visible, onClose, navigation }: { visible: boolean, onClose: () => void, navigation: any }) => {
+  const { theme } = useTheme();
   if (!visible) return null;
 
   return (
     <Modal visible={visible} transparent animationType="fade">
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
-        <View style={styles.fabMenuContainer}>
-          <View style={styles.fabMenuHeader}>
-            <Typography variant="caption" color={colors.textMuted}>QUICK ACTIONS</Typography>
+        <View style={[styles.fabMenuContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <View style={[styles.fabMenuHeader, { borderBottomColor: theme.colors.border }]}>
+            <Typography variant="caption" color={theme.colors.textMuted}>QUICK ACTIONS</Typography>
             <TouchableOpacity onPress={onClose}>
-              <X size={18} color={colors.textMuted} />
+              <X size={18} color={theme.colors.textMuted} />
             </TouchableOpacity>
           </View>
 
           {/* Primary CTA: Start Workout */}
           <TouchableOpacity
-            style={styles.fabPrimaryItem}
+            style={[styles.fabPrimaryItem, { backgroundColor: theme.colors.primary }]}
             activeOpacity={0.9}
             onPress={() => {
               onClose();
@@ -67,17 +56,17 @@ const FloatingActionMenu = ({ visible, onClose, navigation }: { visible: boolean
             }}
           >
             <View style={styles.fabPrimaryLeft}>
-              <Dumbbell size={22} color={colors.primaryDark} strokeWidth={2.5} />
+              <Dumbbell size={22} color={theme.colors.primaryForeground} strokeWidth={2.5} />
               <View style={{ marginLeft: 12 }}>
-                <Text style={styles.fabPrimaryTitle}>🏋️ START WORKOUT</Text>
-                <Text style={styles.fabPrimarySubtitle}>Start a workout now • Timer starts immediately</Text>
+                <Text style={[styles.fabPrimaryTitle, { color: theme.colors.primaryForeground }]}>🏋️ START WORKOUT</Text>
+                <Text style={[styles.fabPrimarySubtitle, { color: theme.colors.primaryForeground + 'b3' }]}>Start a workout now • Timer starts immediately</Text>
               </View>
             </View>
           </TouchableOpacity>
 
           {/* Secondary CTA: Track Food */}
           <TouchableOpacity
-            style={styles.fabSecondaryItem}
+            style={[styles.fabSecondaryItem, { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.border }]}
             activeOpacity={0.8}
             onPress={() => {
               onClose();
@@ -85,11 +74,11 @@ const FloatingActionMenu = ({ visible, onClose, navigation }: { visible: boolean
             }}
           >
             <View style={[styles.fabIconBox, { backgroundColor: 'rgba(249, 115, 22, 0.15)' }]}>
-              <Utensils size={18} color={colors.warning} />
+              <Utensils size={18} color={theme.colors.warning} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.fabSecondaryTitle}>🍎 TRACK FOOD</Text>
-              <Text style={styles.fabSecondarySubtitle}>Log your food, custom products and macros</Text>
+              <Text style={[styles.fabSecondaryTitle, { color: theme.colors.textPrimary }]}>🍎 TRACK FOOD</Text>
+              <Text style={[styles.fabSecondarySubtitle, { color: theme.colors.textSecondary }]}>Log your food, custom products and macros</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -100,15 +89,16 @@ const FloatingActionMenu = ({ visible, onClose, navigation }: { visible: boolean
 
 function MainTabs() {
   const [showFab, setShowFab] = useState(false);
+  const { theme } = useTheme();
 
   return (
     <View style={{ flex: 1 }}>
       <Tab.Navigator
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: colors.primary,
-          tabBarInactiveTintColor: colors.textMuted,
-          tabBarStyle: styles.tabBar,
+          tabBarActiveTintColor: theme.colors.primary,
+          tabBarInactiveTintColor: theme.colors.textSecondary,
+          tabBarStyle: [styles.tabBar, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border }],
           tabBarLabelStyle: { fontSize: 11, fontWeight: '500', marginBottom: 2 },
         }}
       >
@@ -136,10 +126,10 @@ function MainTabs() {
               <View style={styles.fabContainer}>
                 <TouchableOpacity 
                   activeOpacity={0.8} 
-                  style={styles.fabButton}
+                  style={[styles.fabButton, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.primary }]}
                   onPress={() => setShowFab(true)}
                 >
-                  <Plus size={24} color={colors.bg} strokeWidth={2.5} />
+                  <Plus size={24} color={theme.colors.primaryForeground} strokeWidth={2.5} />
                 </TouchableOpacity>
               </View>
             ),
@@ -168,6 +158,20 @@ function MainTabs() {
 }
 
 export default function RootNavigator() {
+  const { theme, themeMode } = useTheme();
+
+  const navTheme = {
+    ...(themeMode === 'light' ? DefaultTheme : DarkTheme),
+    colors: {
+      ...(themeMode === 'light' ? DefaultTheme.colors : DarkTheme.colors),
+      background: theme.colors.background,
+      card: theme.colors.surface,
+      border: theme.colors.border,
+      primary: theme.colors.primary,
+      text: theme.colors.textPrimary,
+    },
+  };
+
   return (
     <NavigationContainer ref={navigationRef} theme={navTheme}>
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
@@ -180,6 +184,7 @@ export default function RootNavigator() {
         <RootStack.Screen name="StrengthPR" component={StrengthPRScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="UserProfile" component={UserProfileScreen} />
         <RootStack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} />
+        <RootStack.Screen name="ExerciseDetail" component={ExerciseDetailScreen} />
 
         
         {/* Duo Workout Stack — single entry point, internal screens navigate within */}

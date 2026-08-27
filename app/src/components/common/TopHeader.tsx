@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { Bell, Utensils, Award } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/colors';
 import { Typography } from '../ui/Typography';
 import { UserProfile } from '../../types/ironsync';
 
@@ -24,22 +24,39 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenStrengthPR,
 }) => {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+
+  const containerStyle = {
+    backgroundColor: theme.colors.surface,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    zIndex: 40,
+    paddingTop: Math.max(insets.top, 12) + 6,
+  };
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 12) + 6 }]}>
+    <View style={containerStyle}>
       <View style={styles.leftSection}>
-        <TouchableOpacity onPress={onAvatarPress} style={styles.avatarContainer}>
+        <TouchableOpacity 
+          onPress={onAvatarPress} 
+          style={[styles.avatarContainer, { borderColor: theme.colors.primary + '4d' }]}
+        >
           <Image source={{ uri: user.avatar }} style={styles.avatar} />
         </TouchableOpacity>
         
         <View style={styles.logoContainer}>
           <Image
-            source={require('../../../assets/icon.png')}
-            style={styles.logoImage}
+            source={require('../../../assets/android-icon-foreground.png')}
+            style={[styles.logoImage, { tintColor: theme.decorations.logoTint }]}
             resizeMode="contain"
           />
-          <Typography variant="h1" color={colors.text} style={styles.logoText}>
-            Iron<Typography variant="h1" color={colors.primary}>Sync</Typography>
+          <Typography variant="h1" color={theme.colors.textPrimary} style={styles.logoText}>
+            Iron<Typography variant="h1" color={theme.colors.primary}>Sync</Typography>
           </Typography>
         </View>
       </View>
@@ -47,19 +64,21 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       <View style={styles.rightSection}>
         {onOpenNutrition && (
           <TouchableOpacity onPress={onOpenNutrition} style={styles.iconBtn}>
-            <Utensils size={20} color={colors.warning} />
+            <Utensils size={20} color={theme.colors.warning} />
           </TouchableOpacity>
         )}
 
         {onOpenStrengthPR && (
           <TouchableOpacity onPress={onOpenStrengthPR} style={styles.iconBtn}>
-            <Award size={20} color={colors.milestone} />
+            <Award size={20} color={theme.colors.accent} />
           </TouchableOpacity>
         )}
 
         <TouchableOpacity onPress={onNotificationPress} style={styles.iconBtn}>
-          <Bell size={22} color={colors.textMuted} />
-          {unreadNotifsCount > 0 && <View style={styles.badge} />}
+          <Bell size={22} color={theme.colors.textSecondary} />
+          {unreadNotifsCount > 0 && (
+            <View style={[styles.badge, { backgroundColor: theme.colors.primary, borderColor: theme.colors.surface }]} />
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -67,17 +86,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 };
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#0B0D0F',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1A1E21',
-    zIndex: 40,
-  },
   leftSection: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -86,7 +94,6 @@ const styles = StyleSheet.create({
     padding: 2,
     borderRadius: 999,
     borderWidth: 2,
-    borderColor: 'rgba(255, 107, 0, 0.3)',
     marginRight: 10,
   },
   avatar: {
@@ -122,9 +129,9 @@ const styles = StyleSheet.create({
     right: 8,
     width: 10,
     height: 10,
-    backgroundColor: colors.primary,
     borderRadius: 5,
     borderWidth: 2,
-    borderColor: colors.bg,
   },
 });
+
+export default TopHeader;

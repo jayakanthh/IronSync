@@ -14,6 +14,13 @@ import { useCurrentUser } from '../../context/CurrentUser';
 import { SimpleHeader } from '../../components/ui/SimpleHeader';
 import ProgressGraph from '../../components/ui/ProgressGraph';
 import { getGoals, getMeasurementHistory, updateGoal } from '../../services/measurements/measurements';
+import {
+  getUnitSystem,
+  convertWeightToDisplay,
+  getWeightUnit,
+  convertCmToDisplay,
+  getMeasurementUnit,
+} from '../../utils/formatting/units';
 import { calculateBMR, calculateTDEE, generateCalorieRecommendation } from '../../services/measurements/energy';
 import { analyzeProgress } from '../../services/measurements/trend';
 import { setNutritionTargets, getNutritionTargets } from '../../services/nutrition/nutrition';
@@ -32,13 +39,13 @@ export default function GoalDetailsScreen() {
   const load = useCallback(async () => {
     if (!profile) return;
     setLoading(true);
-    const [allGoals, wHistory] = await Promise.all([
-      getGoals(profile.id),
-      getMeasurementHistory(profile.id, 'weight'),
-    ]);
+    const allGoals = await getGoals(profile.id);
     const found = allGoals.find((g) => g.id === goalId);
-    if (found) setGoal(found);
-    setWeights(wHistory);
+    if (found) {
+      setGoal(found);
+      const mHistory = await getMeasurementHistory(profile.id, found.measurementType);
+      setWeights(mHistory);
+    }
     setLoading(false);
   }, [profile, goalId]);
 
@@ -136,6 +143,59 @@ export default function GoalDetailsScreen() {
     ]);
   };
 
+  const system = getUnitSystem(profile);
+
+  const formatGoalValue = (val: number, goalUnit: string, measurementType: string) => {
+    if (goalUnit === 'kg' || measurementType === 'weight') {
+      return convertWeightToDisplay(val, system);
+    } else if (goalUnit === 'cm') {
+      return convertCmToDisplay(val, system);
+    }
+    return val;
+  };
+
+  const getGoalUnitLabel = (goalUnit: string, measurementType: string) => {
+    if (goalUnit === 'kg' || measurementType === 'weight') {
+      return getWeightUnit(system);
+    } else if (goalUnit === 'cm') {
+      return getMeasurementUnit(system);
+    }
+    return goalUnit;
+  };
+
+  const formatGoalValueStr = (val: number, goalUnit: string, measurementType: string) => {
+    const converted = formatGoalValue(val, goalUnit, measurementType);
+    if (goalUnit === 'kg' || measurementType === 'weight') {
+      return converted.toFixed(1);
+    } else if (goalUnit === 'cm') {
+      return converted.toFixed(2);
+    }
+    return converted.toString();
+  };
+
+  const displayUnit = getGoalUnitLabel(goal.unit, goal.measurementType);
+  const displayTarget = formatGoalValue(goal.targetValue, goal.unit, goal.measurementType);
+
+  const displayRawPoints = trendResult.rawPoints.map(p => ({
+    ...p,
+    value: formatGoalValue(p.value, goal.unit, goal.measurementType)
+  }));
+  const displayTrendPoints = trendResult.trendPoints.map(p => ({
+    ...p,
+    value: formatGoalValue(p.value, goal.unit, goal.measurementType)
+  }));
+  const displayProjection = trendResult.projection.map(p => ({
+    ...p,
+    expected: formatGoalValue(p.expected, goal.unit, goal.measurementType)
+  }));
+
+  const displayCurrentTrend = trendResult.currentTrend !== null
+    ? formatGoalValue(trendResult.currentTrend, goal.unit, goal.measurementType)
+    : null;
+  const displayExpectedNow = trendResult.expectedNow !== null
+    ? formatGoalValue(trendResult.expectedNow, goal.unit, goal.measurementType)
+    : null;
+
   return (
     <View style={styles.screen}>
       <SimpleHeader title="Goal Details" onBack={() => navigation.goBack()} />
@@ -147,7 +207,7 @@ export default function GoalDetailsScreen() {
             {goal.type.replace(/_/g, ' ').toUpperCase()}
           </Text>
           <Text style={styles.targetText}>
-            {goal.startValue} → {goal.targetValue} {goal.unit}
+            {`${formatGoalValueStr(goal.startValue, goal.unit, goal.measurementType)} → ${formatGoalValueStr(goal.targetValue, goal.unit, goal.measurementType)} ${displayUnit}`}
           </Text>
           <Text style={[styles.statusLabel, { color: trendResult.statusColor }]}>
             {trendResult.statusLabel}
@@ -156,29 +216,29 @@ export default function GoalDetailsScreen() {
 
         {/* Actual vs Expected vs Target graph */}
         <ProgressGraph
-          rawPoints={trendResult.rawPoints}
-          trendPoints={trendResult.trendPoints}
-          projection={trendResult.projection}
-          targetValue={goal.targetValue}
+          rawPoints={displayRawPoints}
+          trendPoints={displayTrendPoints}
+          projection={displayProjection}
+          targetValue={displayTarget}
           height={220}
           showTimeFilter={true}
-          unit={goal.unit}
+          unit={displayUnit}
         />
 
         {/* Stats row */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statValue}>
-              {trendResult.currentTrend !== null
-                ? `${trendResult.currentTrend} ${goal.unit}`
+              {displayCurrentTrend !== null
+                ? `${displayCurrentTrend.toFixed(1)} ${displayUnit}`
                 : '—'}
             </Text>
             <Text style={styles.statLabel}>Current Trend</Text>
           </View>
           <View style={styles.statBox}>
             <Text style={styles.statValue}>
-              {trendResult.expectedNow !== null
-                ? `${trendResult.expectedNow} ${goal.unit}`
+              {displayExpectedNow !== null
+                ? `${displayExpectedNow.toFixed(1)} ${displayUnit}`
                 : '—'}
             </Text>
             <Text style={styles.statLabel}>Expected Now</Text>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { TouchableOpacity, TouchableOpacityProps, StyleSheet, ActivityIndicator, View } from 'react-native';
-import { colors, radius } from '../../theme/colors';
+import { useTheme } from '../../theme/colors';
 import { Typography } from './Typography';
 
 interface ButtonProps extends TouchableOpacityProps {
@@ -24,33 +24,35 @@ export const Button: React.FC<ButtonProps> = ({
   children,
   ...rest
 }) => {
+  const { theme } = useTheme();
+
   const getBackgroundColor = () => {
-    if (disabled && variant !== 'ghost' && variant !== 'outline') return colors.border;
+    if (disabled && variant !== 'ghost' && variant !== 'outline') return theme.colors.border;
     switch (variant) {
-      case 'primary': return colors.primary;
-      case 'secondary': return colors.surfaceAlt;
-      case 'danger': return colors.danger;
+      case 'primary': return theme.colors.primary;
+      case 'secondary': return theme.colors.surfaceElevated;
+      case 'danger': return theme.colors.danger;
       case 'ghost': return 'transparent';
       case 'outline': return 'transparent';
-      default: return colors.primary;
+      default: return theme.colors.primary;
     }
   };
 
   const getTextColor = () => {
-    if (disabled) return colors.textMuted;
+    if (disabled) return theme.colors.textMuted;
     switch (variant) {
-      case 'primary': return colors.primaryDark;
-      case 'secondary': return colors.text;
+      case 'primary': return theme.colors.primaryForeground;
+      case 'secondary': return theme.colors.textPrimary;
       case 'danger': return '#FFF';
-      case 'outline': return colors.primary;
-      case 'ghost': return colors.text;
-      default: return colors.primaryDark;
+      case 'outline': return theme.colors.primary;
+      case 'ghost': return theme.colors.textPrimary;
+      default: return theme.colors.primaryForeground;
     }
   };
 
   const getBorderColor = () => {
-    if (variant === 'outline') return colors.primary;
-    if (variant === 'secondary') return colors.border;
+    if (variant === 'outline') return theme.colors.primary;
+    if (variant === 'secondary') return theme.colors.border;
     return 'transparent';
   };
 
@@ -74,6 +76,7 @@ export const Button: React.FC<ButtonProps> = ({
           borderColor: getBorderColor(),
           borderWidth: variant === 'outline' || variant === 'secondary' ? 1 : 0,
           height: getHeight(),
+          borderRadius: theme.shape.pill,
         },
         style,
       ]}
@@ -104,7 +107,6 @@ export const Button: React.FC<ButtonProps> = ({
 
 const styles = StyleSheet.create({
   button: {
-    borderRadius: radius.pill,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,

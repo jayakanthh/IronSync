@@ -8,14 +8,22 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { ChevronRight, Activity, Target, Zap } from 'lucide-react-native';
-import { colors, spacing, radius } from '../../theme/colors';
+import { ChevronRight, Activity, Target, Zap, Plus } from 'lucide-react-native';
+import { colors, spacing, radius, useTheme } from '../../theme/colors';
 import { useCurrentUser } from '../../context/CurrentUser';
-import { getMeasurementHistory, getActiveGoal } from '../../services/measurements/measurements';
+import { getMeasurementHistory, getActiveGoal, getGoals } from '../../services/measurements/measurements';
+import {
+  getUnitSystem,
+  convertWeightToDisplay,
+  getWeightUnit,
+  convertCmToDisplay,
+  getMeasurementUnit,
+} from '../../utils/formatting/units';
 import { calculateBMR, calculateTDEE } from '../../services/measurements/energy';
 import { analyzeProgress } from '../../services/measurements/trend';
 import type { MeasurementEntry, MeasurementGoal, MeasurementType } from '../../models/measurement';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ExpandableMeasurementCard from '../../components/measurements/ExpandableMeasurementCard';
 
 type MeasTile = { type: MeasurementType; label: string; unit: string };
 
@@ -32,36 +40,39 @@ const MEASUREMENT_TILES: MeasTile[] = [
   { type: 'calf', label: 'Calf', unit: 'cm' },
 ];
 
-
 export default function MeasurementsScreen() {
+  const { theme } = useTheme();
   const { profile } = useCurrentUser();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
 
   const [loading, setLoading] = useState(true);
-  const [latestByType, setLatestByType] = useState<Record<string, MeasurementEntry | null>>({});
+  const [expandedType, setExpandedType] = useState<string | null>('weight');
+  const [historiesByType, setHistoriesByType] = useState<Record<string, MeasurementEntry[]>>({});
+  const [goalsByType, setGoalsByType] = useState<Record<string, MeasurementGoal>>({});
   const [activeGoal, setActiveGoal] = useState<MeasurementGoal | null>(null);
-  const [weightHistory, setWeightHistory] = useState<MeasurementEntry[]>([]);
 
   const load = useCallback(async () => {
     if (!profile) return;
     setLoading(true);
-    const [goal, weightData, ...otherData] = await Promise.all([
-      getActiveGoal(profile.id),
-      getMeasurementHistory(profile.id, 'weight'),
-      ...MEASUREMENT_TILES.slice(1).map((t) => getMeasurementHistory(profile.id, t.type)),
+    const [allGoals, ...allData] = await Promise.all([
+      getGoals(profile.id, 'active'),
+      ...MEASUREMENT_TILES.map((t) => getMeasurementHistory(profile.id, t.type)),
     ]);
 
-    const byType: Record<string, MeasurementEntry | null> = {};
-    byType['weight'] = weightData.length > 0 ? weightData[weightData.length - 1] : null;
-    MEASUREMENT_TILES.slice(1).forEach((t, i) => {
-      const data = otherData[i];
-      byType[t.type] = data.length > 0 ? data[data.length - 1] : null;
+    const hist: Record<string, MeasurementEntry[]> = {};
+    MEASUREMENT_TILES.forEach((t, i) => {
+      hist[t.type] = allData[i];
     });
 
-    setActiveGoal(goal);
-    setWeightHistory(weightData);
-    setLatestByType(byType);
+    const gMap: Record<string, MeasurementGoal> = {};
+    allGoals.forEach((g) => {
+      gMap[g.measurementType] = g;
+    });
+
+    setGoalsByType(gMap);
+    setActiveGoal(allGoals.length > 0 ? allGoals[0] : null);
+    setHistoriesByType(hist);
     setLoading(false);
   }, [profile]);
 
@@ -95,10 +106,41 @@ export default function MeasurementsScreen() {
     tdee = calculateTDEE(bmr, profile.activityLevel!);
   }
 
+  const system = getUnitSystem(profile);
+
+  const formatGoalValue = (val: number, goalUnit: string, measurementType: string) => {
+    if (goalUnit === 'kg' || measurementType === 'weight') {
+      return convertWeightToDisplay(val, system);
+    } else if (goalUnit === 'cm') {
+      return convertCmToDisplay(val, system);
+    }
+    return val;
+  };
+
+  const getGoalUnitLabel = (goalUnit: string, measurementType: string) => {
+    if (goalUnit === 'kg' || measurementType === 'weight') {
+      return getWeightUnit(system);
+    } else if (goalUnit === 'cm') {
+      return getMeasurementUnit(system);
+    }
+    return goalUnit;
+  };
+
+  const formatGoalValueStr = (val: number, goalUnit: string, measurementType: string) => {
+    const converted = formatGoalValue(val, goalUnit, measurementType);
+    if (goalUnit === 'kg' || measurementType === 'weight') {
+      return converted.toFixed(1);
+    } else if (goalUnit === 'cm') {
+      return converted.toFixed(2);
+    }
+    return converted.toString();
+  };
+
   // ── Goal progress ──────────────────────────────────────────────────────────
+  const goalHistory = activeGoal ? (historiesByType[activeGoal.measurementType] || []) : [];
   let trendResult = activeGoal
     ? analyzeProgress(
-        weightHistory,
+        goalHistory,
         activeGoal.startValue,
         activeGoal.targetValue,
         activeGoal.startDate,
@@ -106,7 +148,7 @@ export default function MeasurementsScreen() {
       )
     : null;
 
-  const latestWeight = latestByType['weight'];
+  const goalLatestEntry = goalHistory.length > 0 ? goalHistory[goalHistory.length - 1] : null;
 
   return (
     <ScrollView
@@ -129,32 +171,27 @@ export default function MeasurementsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── CURRENT STATS ─────────────────────────────────────────────────── */}
-      <Text style={styles.sectionLabel}>CURRENT STATS</Text>
-      <View style={styles.tilesGrid}>
+      {/* ── MEASUREMENTS EXPANDABLE LIST ─────────────────────────────────── */}
+      <Text style={styles.sectionLabel}>BODY MEASUREMENTS & TRACKING</Text>
+      <View style={{ gap: spacing.sm, marginBottom: spacing.md }}>
         {MEASUREMENT_TILES.map((t) => {
-          const entry = latestByType[t.type];
+          const hist = historiesByType[t.type] || [];
+          const goalForType = goalsByType[t.type] || (t.type === 'weight' ? activeGoal : null);
+          const isExpanded = expandedType === t.type;
+
           return (
-            <TouchableOpacity
+            <ExpandableMeasurementCard
               key={t.type}
-              style={styles.tile}
-              onPress={() =>
-                navigation.navigate('MeasurementHistory', {
-                  type: t.type,
-                  unit: t.unit,
-                })
-              }
-            >
-              <Text style={styles.tileValue}>
-                {entry ? `${entry.value} ${t.unit}` : '—'}
-              </Text>
-              <Text style={styles.tileLabel}>{t.label}</Text>
-              <ChevronRight
-                size={12}
-                color={colors.textMuted}
-                style={{ alignSelf: 'flex-end', marginTop: 4 }}
-              />
-            </TouchableOpacity>
+              tile={t}
+              entries={hist}
+              goal={goalForType}
+              system={system}
+              isExpanded={isExpanded}
+              onToggle={() => {
+                setExpandedType((prev) => (prev === t.type ? null : t.type));
+              }}
+              onSetGoal={() => navigation.navigate('GoalSetup')}
+            />
           );
         })}
       </View>
@@ -175,7 +212,7 @@ export default function MeasurementsScreen() {
                 {activeGoal.type.replace(/_/g, ' ').toUpperCase()}
               </Text>
               <Text style={styles.goalCardValues}>
-                {activeGoal.startValue} → {activeGoal.targetValue} {activeGoal.unit}
+                {`${formatGoalValueStr(activeGoal.startValue, activeGoal.unit, activeGoal.measurementType)} → ${formatGoalValueStr(activeGoal.targetValue, activeGoal.unit, activeGoal.measurementType)} ${getGoalUnitLabel(activeGoal.unit, activeGoal.measurementType)}`}
               </Text>
             </View>
             {trendResult && (
@@ -190,7 +227,7 @@ export default function MeasurementsScreen() {
           {/* Mini progress bar */}
           {activeGoal && (() => {
             const total = Math.abs(activeGoal.startValue - activeGoal.targetValue);
-            const current = latestWeight?.value ?? activeGoal.startValue;
+            const current = goalLatestEntry?.value ?? activeGoal.startValue;
             const done = Math.abs(activeGoal.startValue - current);
             const pct = total === 0 ? 100 : Math.min(100, (done / total) * 100);
             return (
@@ -307,6 +344,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   tileValue: { color: colors.text, fontSize: 20, fontWeight: '800' },
+  tileNoLogs: { color: colors.textMuted, fontSize: 16, fontWeight: '600', marginTop: 2 },
   tileLabel: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
 
   goalCard: {

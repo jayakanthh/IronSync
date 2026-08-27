@@ -34,6 +34,12 @@ import { Button } from '../../components/ui/Button';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { getMeasurements, addMeasurement, getWorkoutHistory, getActiveGoal, getExercisesByIds } from '../../services/index';
 import type { Measurement, Workout, Exercise } from '../../models/index';
+import {
+  getUnitSystem,
+  convertWeightToDisplay,
+  convertWeightToCanonical,
+  getWeightUnit
+} from '../../utils/formatting/units';
 
 // ─── Chart Constants ─────────────────────────────────────────────────────────
 const CHART_W = 300;
@@ -93,6 +99,8 @@ export default function ProgressAnalyticsScreen() {
   }, [loadData]);
 
   // 1. Process Weight History for chart
+  const system = getUnitSystem(profile);
+
   const weightHistory = useMemo(() => {
     // Sort oldest first for graph rendering
     const list = [...measurementsList]
@@ -113,16 +121,16 @@ export default function ProgressAnalyticsScreen() {
       id: m.id,
       date: m.date,
       displayDate: new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      weight: m.weightKg!,
+      weight: convertWeightToDisplay(m.weightKg!, system),
     }));
-  }, [measurementsList, activeTimeframe]);
+  }, [measurementsList, activeTimeframe, system]);
 
   // Set default stepper input when profile is loaded
   useEffect(() => {
     if (profile?.weightKg) {
-      setNewWeightInput(profile.weightKg.toString());
+      setNewWeightInput(convertWeightToDisplay(profile.weightKg, system).toString());
     }
-  }, [profile]);
+  }, [profile, system]);
 
   // Calculate chart boundaries
   const { minW, maxW } = useMemo(() => {
@@ -263,9 +271,13 @@ export default function ProgressAnalyticsScreen() {
   }, [activeGoalVal, profile]);
 
   const handleSaveWeight = async () => {
-    const val = parseFloat(newWeightInput);
+    const rawVal = parseFloat(newWeightInput);
+    const val = convertWeightToCanonical(rawVal, system);
     if (isNaN(val) || val < 30 || val > 300) {
-      return Alert.alert('Invalid weight', 'Enter a weight between 30 and 300 kg.');
+      const minDisplay = convertWeightToDisplay(30, system);
+      const maxDisplay = convertWeightToDisplay(300, system);
+      const unit = getWeightUnit(system);
+      return Alert.alert('Invalid weight', `Enter a weight between ${minDisplay.toFixed(0)} and ${maxDisplay.toFixed(0)} ${unit}.`);
     }
     if (!profile || saving) return;
     
@@ -577,7 +589,7 @@ export default function ProgressAnalyticsScreen() {
               <Typography variant="h2" style={{ fontSize: 16 }}>Log Today's Weight</Typography>
             </View>
 
-            <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 11, marginBottom: 6 }}>Weight (kg)</Typography>
+            <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 11, marginBottom: 6 }}>Weight ({getWeightUnit(system)})</Typography>
             <TextInput
               style={styles.weightInput}
               keyboardType="decimal-pad"

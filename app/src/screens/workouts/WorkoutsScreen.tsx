@@ -4,7 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Alert } from 'react-native';
 import { Play, Plus, Dumbbell } from 'lucide-react-native';
-import { colors, spacing, radius } from '../../theme/colors';
+import { colors, spacing, radius, useTheme } from '../../theme/colors';
 import RoutineLibraryScreen from './RoutineLibraryScreen';
 import ExerciseLibraryScreen from './ExerciseLibraryScreen';
 import { getExercises, searchExercises, getMyPlans, getPublicPlans, getPlan, clonePlan, setActivePlan } from '../../services/index';
@@ -77,17 +77,19 @@ export default function WorkoutsScreen({
     }
   };
 
+  const { theme } = useTheme();
+
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
       {/* Exercise Hub Launch Header */}
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-        <Text style={styles.headerTitle}>Exercise Hub</Text>
-        <Text style={styles.headerSubtitle}>Start training splits or log free workouts</Text>
+        <Text style={[styles.headerTitle, { color: theme.colors.textPrimary, fontWeight: theme.typography.headingWeight }]}>Exercise Hub</Text>
+        <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>Start training splits or log free workouts</Text>
       </View>
 
       {/* Start Workout Primary CTA - Free Workout */}
       <TouchableOpacity
-        style={styles.startWorkoutCta}
+        style={[styles.startWorkoutCta, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.primary }]}
         activeOpacity={0.9}
         onPress={() => {
           // Navigates immediately to LogWorkout with empty exercises and starts timer
@@ -98,24 +100,24 @@ export default function WorkoutsScreen({
         }}
       >
         <View style={styles.ctaContent}>
-          <Play size={20} color={colors.primaryDark} fill={colors.primaryDark} />
-          <Text style={styles.startWorkoutText}>+ Start Free Workout</Text>
+          <Play size={20} color={theme.colors.primaryForeground} fill={theme.colors.primaryForeground} />
+          <Text style={[styles.startWorkoutText, { color: theme.colors.primaryForeground }]}>+ Start Free Workout</Text>
         </View>
       </TouchableOpacity>
 
       {/* Selector Tabs */}
-      <View style={styles.segmentWrap}>
+      <View style={[styles.segmentWrap, { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.border }]}>
         <TouchableOpacity
-          style={[styles.segment, tab === 'routines' && styles.segmentActive]}
+          style={[styles.segment, tab === 'routines' && [styles.segmentActive, { backgroundColor: theme.colors.primary }]]}
           onPress={() => setTab('routines')}
         >
-          <Text style={[styles.segmentText, tab === 'routines' && styles.segmentTextActive]}>ROUTINES</Text>
+          <Text style={[styles.segmentText, { color: tab === 'routines' ? theme.colors.primaryForeground : theme.colors.textSecondary }]}>ROUTINES</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.segment, tab === 'exercises' && styles.segmentActive]}
+          style={[styles.segment, tab === 'exercises' && [styles.segmentActive, { backgroundColor: theme.colors.primary }]]}
           onPress={() => setTab('exercises')}
         >
-          <Text style={[styles.segmentText, tab === 'exercises' && styles.segmentTextActive]}>EXERCISES</Text>
+          <Text style={[styles.segmentText, { color: tab === 'exercises' ? theme.colors.primaryForeground : theme.colors.textSecondary }]}>EXERCISES</Text>
         </TouchableOpacity>
       </View>
 

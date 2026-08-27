@@ -6,6 +6,13 @@ import { useCurrentUser } from '../../context/CurrentUser';
 import { logMeasurement } from '../../services/measurements/measurements';
 import { SimpleHeader as TopHeader } from '../../components/ui/SimpleHeader';
 import type { MeasurementType } from '../../models/measurement';
+import {
+  getUnitSystem,
+  convertWeightToCanonical,
+  convertCmToCanonical,
+  getWeightUnit,
+  getMeasurementUnit
+} from '../../utils/formatting/units';
 
 const LOG_FIELDS: { type: MeasurementType; label: string; unit: string; placeholder: string; section: 'stats' | 'circumference' }[] = [
   { type: 'weight', label: 'Weight', unit: 'kg', placeholder: 'e.g. 82.5', section: 'stats' },
@@ -28,6 +35,8 @@ export default function LogMeasurementScreen() {
   });
   const [saving, setSaving] = useState(false);
 
+  const system = getUnitSystem(profile);
+
   const handleSave = async () => {
     if (!profile || saving) return;
     const hasValue = Object.values(values).some(v => v.trim());
@@ -44,12 +53,19 @@ export default function LogMeasurementScreen() {
       if (rawVal && rawVal.trim()) {
         const val = parseFloat(rawVal);
         if (!isNaN(val)) {
+          // Convert to canonical if imperial
+          const canonicalVal = field.type === 'weight'
+            ? convertWeightToCanonical(val, system)
+            : (field.type === 'body_fat' ? val : convertCmToCanonical(val, system));
+          
+          const dbUnit = field.type === 'weight' ? 'kg' : (field.type === 'body_fat' ? '%' : 'cm');
+
           promises.push(
             logMeasurement(profile.id, {
               userId: profile.id,
               type: field.type,
-              value: val,
-              unit: field.unit,
+              value: canonicalVal,
+              unit: dbUnit,
               recordedAt: Date.now(),
             })
           );
@@ -73,22 +89,28 @@ export default function LogMeasurementScreen() {
     return (
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{title}</Text>
-        {fields.map(field => (
-          <View key={field.type} style={styles.inputGroup}>
-            <View style={styles.labelRow}>
-              <Text style={styles.label}>{field.label}</Text>
-              <Text style={styles.unit}>({field.unit})</Text>
+        {fields.map(field => {
+          const displayUnit = field.type === 'weight'
+            ? getWeightUnit(system)
+            : (field.type === 'body_fat' ? '%' : getMeasurementUnit(system));
+
+          return (
+            <View key={field.type} style={styles.inputGroup}>
+              <View style={styles.labelRow}>
+                <Text style={styles.label}>{field.label}</Text>
+                <Text style={styles.unit}>({displayUnit})</Text>
+              </View>
+              <TextInput
+                style={styles.input}
+                keyboardType="decimal-pad"
+                value={values[field.type] || ''}
+                onChangeText={text => setValues(prev => ({ ...prev, [field.type]: text }))}
+                placeholder={field.placeholder}
+                placeholderTextColor={colors.textMuted}
+              />
             </View>
-            <TextInput
-              style={styles.input}
-              keyboardType="decimal-pad"
-              value={values[field.type] || ''}
-              onChangeText={text => setValues(prev => ({ ...prev, [field.type]: text }))}
-              placeholder={field.placeholder}
-              placeholderTextColor={colors.textMuted}
-            />
-          </View>
-        ))}
+          );
+        })}
       </View>
     );
   };

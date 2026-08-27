@@ -10,6 +10,7 @@ import MeasurementHistoryScreen from '../screens/measurements/MeasurementHistory
 import BodyProfileScreen from '../screens/measurements/BodyProfileScreen';
 import WorkoutHistoryScreen from '../screens/workouts/WorkoutHistoryScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
+import ThemesScreen from '../screens/settings/ThemesScreen';
 
 export type MeStackParamList = {
   Profile: undefined;
@@ -21,6 +22,7 @@ export type MeStackParamList = {
   BodyProfile: undefined;
   WorkoutHistory: undefined;
   Settings: undefined;
+  Themes: undefined;
 };
 
 const Stack = createNativeStackNavigator<MeStackParamList>();
@@ -37,6 +39,7 @@ export default function MeStack() {
       <Stack.Screen name="BodyProfile" component={BodyProfileScreen} />
       <Stack.Screen name="WorkoutHistory" component={WorkoutHistoryScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      <Stack.Screen name="Themes" component={ThemesScreen} />
     </Stack.Navigator>
   );
 }

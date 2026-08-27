@@ -1,29 +1,34 @@
+import React from 'react';
+import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { View } from 'react-native';
-import { colors } from './src/theme/colors';
 import { CurrentUserProvider } from './src/context/CurrentUser';
 import AuthGate from './src/components/common/AuthGate';
 import RootNavigator from './src/navigation/RootNavigator';
+import { ThemeProvider, useTheme } from './src/theme/colors';
+import ThemeWatermark from './src/components/common/ThemeWatermark';
 
-/**
- * App entry point. SafeAreaProvider supplies insets; each SCREEN applies its own
- * top inset (via its header / SafeAreaView / useSafeAreaInsets). We deliberately
- * do NOT wrap here with SafeAreaView(top) — that double-applied the inset on top
- * of every screen's own handling, leaving a big gap. Auth/onboarding screens
- * handle their own inset too.
- */
+function AppContent() {
+  const { theme, themeMode } = useTheme();
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+      <StatusBar style={themeMode === 'light' ? 'dark' : 'light'} />
+      <ThemeWatermark />
+      <AuthGate>
+        <RootNavigator />
+      </AuthGate>
+    </View>
+  );
+}
+
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <StatusBar style="light" />
-      <CurrentUserProvider>
-        <View style={{ flex: 1, backgroundColor: colors.bg }}>
-          <AuthGate>
-            <RootNavigator />
-          </AuthGate>
-        </View>
-      </CurrentUserProvider>
-    </SafeAreaProvider>
+    <ThemeProvider>
+      <SafeAreaProvider>
+        <CurrentUserProvider>
+          <AppContent />
+        </CurrentUserProvider>
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 }

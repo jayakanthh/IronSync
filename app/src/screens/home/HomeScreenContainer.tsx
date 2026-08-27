@@ -19,11 +19,12 @@ import {
 } from '../../services/index';
 import type { UserProfile, TrainingBuddy } from '../../types/ironsync';
 import type { AppNotification } from '../../models/index';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme/colors';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function HomeScreenContainer({ navigation }: { navigation: NavigationProp<any> }) {
+  const { theme } = useTheme();
   const { profile } = useCurrentUser();
   const [today, setToday] = useState<{ title: string; subtitle: string } | undefined>(undefined);
   const [calories, setCalories] = useState(0);
@@ -152,8 +153,8 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
 
   if (loading || !profile) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.primary} size="large" />
+      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator color={theme.colors.primary} size="large" />
       </View>
     );
   }
@@ -169,7 +170,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0e1012' }}>
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <TopHeader
         user={user}
         unreadNotifsCount={unreadNotifsCount}
@@ -196,5 +197,5 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, backgroundColor: '#0e1012', alignItems: 'center', justifyContent: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

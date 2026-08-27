@@ -135,6 +135,147 @@ export async function addCustomExercise(
   return ref.id;
 }
 
+export interface RecentExerciseRow {
+  exerciseId: string;
+  exerciseName: string;
+  lastPerformedAt: number;
+  lastSummary?: string;
+}
+
+/**
+ * Recent exercises performed by a user, one row per distinct exercise,
+ * most-recently-performed first - used by RecentExercisesCard.
+ *
+ * NOTE: built from the same `users/{userId}/workouts` subcollection as
+ * getUserRecentExercises below. Once you send over workouts.ts, I'll
+ * double check the `entries`/`sets` field names match your real workout
+ * documents - right now this assumes:
+ *   workout.entries: { exerciseId: string; sets?: { weight?, reps? }[] }[]
+ * which mirrors what OverviewTab.tsx already reads off workout documents.
+ */
+export async function getRecentExercisesForUser(userId: string, max = 8): Promise<RecentExerciseRow[]> {
+  const q = query(
+    collection(db, 'users', userId, 'workouts'),
+    orderBy('createdAt', 'desc'),
+    limit(30) // scan enough recent workouts to surface `max` distinct exercises
+  );
+  const snap = await getDocs(q);
+
+  interface RawHit {
+    exerciseId: string;
+    lastPerformedAt: number;
+    setCount: number;
+    topWeight?: number;
+    topReps?: number;
+  }
+  const seen = new Map<string, RawHit>();
+
+  for (const d of snap.docs) {
+    const workout = d.data() as any;
+    const createdAt: number = workout.createdAt ?? 0;
+    const entries: { exerciseId: string; sets?: { weight?: number; weightKg?: number; reps?: number }[] }[] = workout.entries ?? [];
+
+    for (const entry of entries) {
+      if (seen.has(entry.exerciseId)) continue; // keep only the most recent occurrence
+
+      const sets = Array.isArray(entry.sets) ? entry.sets : [];
+      let topWeight: number | undefined;
+      let topReps: number | undefined;
+      for (const s of sets) {
+        const w = s.weightKg ?? s.weight;
+        if (typeof w === 'number' && (topWeight === undefined || w > topWeight)) {
+          topWeight = w;
+          topReps = s.reps;
+        }
+      }
+
+      seen.set(entry.exerciseId, {
+        exerciseId: entry.exerciseId,
+        lastPerformedAt: createdAt,
+        setCount: sets.length,
+        topWeight,
+        topReps,
+      });
+
+      if (seen.size >= max) break;
+    }
+    if (seen.size >= max) break;
+  }
+
+  const hits = Array.from(seen.values());
+  const exercises = await getExercisesByIds(hits.map(h => h.exerciseId));
+  const exerciseNameById = new Map(exercises.map(e => [e.id, e.name]));
+
+  return hits
+    .sort((a, b) => b.lastPerformedAt - a.lastPerformedAt)
+    .map(h => ({
+      exerciseId: h.exerciseId,
+      exerciseName: exerciseNameById.get(h.exerciseId) ?? 'Unknown exercise',
+      lastPerformedAt: h.lastPerformedAt,
+      lastSummary:
+        h.setCount > 0
+          ? `${h.setCount} ${h.setCount === 1 ? 'set' : 'sets'}${typeof h.topWeight === 'number' ? `  ·  top ${h.topWeight}kg x ${h.topReps ?? '?'}` : ''}`
+          : undefined,
+    }));
+}
+
+export interface UserExerciseSessionHistory {
+  date: number;
+  sets: number;
+  volume: number;
+  topSet?: { weight: number; reps: number };
+}
+
+/** Get full session history for a user on a specific exercise. */
+export async function getExerciseHistoryForUser(
+  userId: string,
+  exerciseId: string,
+  max = 50
+): Promise<UserExerciseSessionHistory[]> {
+  const q = query(
+    collection(db, 'users', userId, 'workouts'),
+    orderBy('createdAt', 'desc'),
+    limit(max)
+  );
+  const snap = await getDocs(q);
+  const results: UserExerciseSessionHistory[] = [];
+
+  for (const d of snap.docs) {
+    const workout = d.data() as any;
+    const createdAt: number = workout.createdAt ?? (workout.date ? new Date(workout.date).getTime() : 0);
+    const entries: { exerciseId: string; sets?: { weight?: number; weightKg?: number; reps?: number }[] }[] = workout.entries ?? [];
+
+    const matchingEntry = entries.find((e) => e.exerciseId === exerciseId);
+    if (matchingEntry) {
+      const sets = Array.isArray(matchingEntry.sets) ? matchingEntry.sets : [];
+      let totalVolume = 0;
+      let topWeight = 0;
+      let topReps = 0;
+
+      for (const s of sets) {
+        const w = s.weightKg ?? s.weight ?? 0;
+        const r = s.reps ?? 0;
+        totalVolume += w * r;
+        if (w > topWeight || (w === topWeight && r > topReps)) {
+          topWeight = w;
+          topReps = r;
+        }
+      }
+
+      if (sets.length > 0) {
+        results.push({
+          date: createdAt,
+          sets: sets.length,
+          volume: totalVolume,
+          topSet: topWeight > 0 ? { weight: topWeight, reps: topReps } : undefined,
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
 /** Get recent exercises performed by a user (last N workout entries). */
 export async function getUserRecentExercises(userId: string, max = 20): Promise<string[]> {
   const q = query(

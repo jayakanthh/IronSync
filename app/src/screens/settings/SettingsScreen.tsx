@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Alert,
   ScrollView,
@@ -9,21 +9,35 @@ import {
   View,
   TextInput,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Scale, Bell, Shield, Info, ChevronRight, ChevronLeft, Check, X, Edit2 } from "lucide-react-native";
+import { Scale, Bell, Shield, Info, ChevronRight, ChevronLeft, Check, X, Edit2, Palette } from "lucide-react-native";
 import { colors, spacing, radius } from "../../theme/colors";
 import { useCurrentUser } from "../../context/CurrentUser";
-import { signOutUser, isUsernameAvailable, saveUsername, validateUsernameFormat, normalizeUsername } from "../../services/index";
+import { 
+  signOutUser, 
+  isUsernameAvailable, 
+  saveUsername, 
+  validateUsernameFormat, 
+  normalizeUsername,
+  updateUser,
+  setMemberTrainingStatus
+} from "../../services/index";
 
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { profile, refresh } = useCurrentUser();
 
-  // Units toggle: default to metric (kg)
-  const [useMetric, setUseMetric] = useState(true);
+  // Unit system selection modal visibility
+  const [showUnitsModal, setShowUnitsModal] = useState(false);
+  const [savingUnits, setSavingUnits] = useState(false);
+
+  // Logout state
+  const [loggingOut, setLoggingOut] = useState(false);
+
   // Notification toggle: placeholder (no push yet)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
@@ -33,6 +47,8 @@ export default function SettingsScreen() {
   const [checking, setChecking] = useState(false);
   const [status, setStatus] = useState<"empty" | "invalid" | "available" | "taken">("empty");
   const [busy, setBusy] = useState(false);
+
+  const unitSystem = profile?.unitSystem === "imperial" ? "imperial" : "metric";
 
   useEffect(() => {
     if (!editingUsername) return;
@@ -84,15 +100,19 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleUnitsToggle = (val: boolean) => {
-    setUseMetric(val);
-    Alert.alert(
-      "Units changed",
-      val
-        ? "Using metric units (kg, cm)"
-        : "Using imperial units (lbs, in)",
-      [{ text: "OK" }],
-    );
+  const handleSaveUnitSystem = async (system: "metric" | "imperial") => {
+    if (!profile || savingUnits) return;
+    setSavingUnits(true);
+    try {
+      await updateUser(profile.id, { unitSystem: system });
+      await refresh();
+      setShowUnitsModal(false);
+      Alert.alert("Success", `Units changed to ${system === "metric" ? "Metric (kg, cm, km)" : "Imperial (lb, in, mi)"}`);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || "Failed to update unit preferences.");
+    } finally {
+      setSavingUnits(false);
+    }
   };
 
   const handleNotificationsToggle = (val: boolean) => {
@@ -103,6 +123,40 @@ export default function SettingsScreen() {
         "You will no longer receive workout reminders or social alerts.",
         [{ text: "OK" }],
       );
+    }
+  };
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      // Clear training status in communities if user is currently training
+      if (profile) {
+        const cids = profile.communityIds || [];
+        if (cids.length > 0) {
+          await Promise.all(
+            cids.map((cid) =>
+              setMemberTrainingStatus(cid, profile.id, false).catch((err) =>
+                console.warn("Failed to clear community training status:", cid, err)
+              )
+            )
+          );
+        }
+      }
+      // Perform sign out
+      await signOutUser();
+    } catch (err: any) {
+      console.error("Logout failed:", err);
+      Alert.alert(
+        "Logout Failed",
+        "Couldn't log out. Please try again.",
+        [
+          { text: "Retry", onPress: handleLogout },
+          { text: "Cancel", style: "cancel" }
+        ]
+      );
+    } finally {
+      setLoggingOut(false);
     }
   };
 
@@ -193,21 +247,28 @@ export default function SettingsScreen() {
         {/* Preferences */}
         <Text style={styles.sectionLabel}>PREFERENCES</Text>
         <View style={styles.card}>
-          <View style={styles.toggleRow}>
+          <TouchableOpacity
+            style={styles.toggleRow}
+            activeOpacity={0.7}
+            onPress={() => setShowUnitsModal(true)}
+            disabled={savingUnits}
+          >
             <View style={styles.toggleLeft}>
               <Scale size={16} color={colors.primary} />
               <View>
                 <Text style={styles.toggleLabel}>Metric Units</Text>
-                <Text style={styles.toggleSub}>kg, cm, km</Text>
+                <Text style={styles.toggleSub}>
+                  {unitSystem === "metric" ? "kg, cm, km" : "lb, in, mi"}
+                </Text>
               </View>
             </View>
-            <Switch
-              value={useMetric}
-              onValueChange={handleUnitsToggle}
-              trackColor={{ false: colors.surfaceAlt, true: colors.primary + "80" }}
-              thumbColor={useMetric ? colors.primary : colors.textMuted}
-            />
-          </View>
+            {savingUnits ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <ChevronRight size={18} color={colors.textMuted} />
+            )}
+          </TouchableOpacity>
+
           <View style={[styles.toggleRow, { borderTopWidth: 1, borderTopColor: colors.border }]}>
             <View style={styles.toggleLeft}>
               <Bell size={16} color={colors.primary} />
@@ -223,6 +284,21 @@ export default function SettingsScreen() {
               thumbColor={notificationsEnabled ? colors.primary : colors.textMuted}
             />
           </View>
+
+          <TouchableOpacity
+            style={[styles.toggleRow, { borderTopWidth: 1, borderTopColor: colors.border }]}
+            activeOpacity={0.7}
+            onPress={() => navigation.navigate("Themes")}
+          >
+            <View style={styles.toggleLeft}>
+              <Palette size={16} color={colors.primary} />
+              <View>
+                <Text style={styles.toggleLabel}>Themes</Text>
+                <Text style={styles.toggleSub}>Personalize your visual identity</Text>
+              </View>
+            </View>
+            <ChevronRight size={18} color={colors.textMuted} />
+          </TouchableOpacity>
         </View>
 
         {/* Privacy */}
@@ -256,18 +332,63 @@ export default function SettingsScreen() {
 
         {/* Logout */}
         <TouchableOpacity
-          style={styles.logoutBtn}
+          style={[styles.logoutBtn, loggingOut && { opacity: 0.6 }]}
+          disabled={loggingOut}
           onPress={() => {
-            Alert.alert("Log out", "Are you sure you want to log out?", [
+            Alert.alert("Log out", "Log out of IronSync?", [
               { text: "Cancel", style: "cancel" },
-              { text: "Log out", style: "destructive", onPress: signOutUser },
+              { text: "Log out", style: "destructive", onPress: handleLogout },
             ]);
           }}
           activeOpacity={0.8}
         >
-          <Text style={styles.logoutText}>Log out</Text>
+          {loggingOut ? (
+            <ActivityIndicator size="small" color="#F87171" />
+          ) : (
+            <Text style={styles.logoutText}>Log out</Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Units Selection Modal */}
+      <Modal visible={showUnitsModal} transparent animationType="slide">
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContentBox}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Units</Text>
+              <TouchableOpacity onPress={() => setShowUnitsModal(false)}>
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.optionsList}>
+              <TouchableOpacity
+                style={styles.optionItem}
+                activeOpacity={0.7}
+                onPress={() => handleSaveUnitSystem("metric")}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.optionLabel}>Metric</Text>
+                  <Text style={styles.optionSub}>kg, cm, km</Text>
+                </View>
+                {unitSystem === "metric" && <Check size={20} color={colors.primary} />}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.optionItem, { borderTopWidth: 1, borderTopColor: colors.border }]}
+                activeOpacity={0.7}
+                onPress={() => handleSaveUnitSystem("imperial")}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.optionLabel}>Imperial</Text>
+                  <Text style={styles.optionSub}>lb, in, mi</Text>
+                </View>
+                {unitSystem === "imperial" && <Check size={20} color={colors.primary} />}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -433,5 +554,54 @@ const styles = StyleSheet.create({
     color: colors.primaryDark,
     fontSize: 13,
     fontWeight: "700",
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: spacing.md,
+  },
+  modalContentBox: {
+    width: "100%",
+    maxWidth: 300,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  modalHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  optionsList: {
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+  },
+  optionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: spacing.md,
+  },
+  optionLabel: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  optionSub: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
   },
 });

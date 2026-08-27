@@ -15,11 +15,17 @@ import { useCurrentUser } from '../../context/CurrentUser';
 import { getPersonalRecords } from '../../services/workouts/workouts';
 import { getExercisesByIds } from '../../services/exercises/exercises';
 import type { PersonalRecord, Exercise } from '../../models/index';
+import {
+  getUnitSystem,
+  convertWeightToDisplay,
+  getWeightUnit
+} from '../../utils/formatting/units';
 
 export default function StrengthPRScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { profile } = useCurrentUser();
+  const system = getUnitSystem(profile);
   const [prs, setPrs] = useState<PersonalRecord[]>([]);
   const [exercisesMap, setExercisesMap] = useState<Record<string, Exercise>>({});
   const [loading, setLoading] = useState(true);
@@ -99,13 +105,13 @@ export default function StrengthPRScreen() {
                 <View style={styles.metricRow}>
                   <Flame size={14} color={colors.primary} />
                   <Text style={styles.metricText}>
-                    {item.bestWeightKg} kg × {item.bestReps}
+                    {convertWeightToDisplay(item.bestWeightKg, system).toFixed(1)} {getWeightUnit(system)} × {item.bestReps}
                   </Text>
                 </View>
                 <View style={styles.e1rmRow}>
                   <TrendingUp size={12} color={colors.textMuted} />
                   <Text style={styles.e1rmLabel}>Est. 1RM:</Text>
-                  <Text style={styles.e1rmValue}>{item.estimated1RM} kg</Text>
+                  <Text style={styles.e1rmValue}>{convertWeightToDisplay(item.estimated1RM, system).toFixed(1)} {getWeightUnit(system)}</Text>
                 </View>
               </View>
             </View>

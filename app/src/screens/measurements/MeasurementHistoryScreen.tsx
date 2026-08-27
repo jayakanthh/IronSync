@@ -23,6 +23,13 @@ import ProgressGraph, { TimeRange } from '../../components/ui/ProgressGraph';
 import { getMeasurementHistory } from '../../services/measurements/measurements';
 import { computeRollingAverage } from '../../services/measurements/trend';
 import type { MeasurementEntry, MeasurementType } from '../../models/measurement';
+import {
+  getUnitSystem,
+  convertWeightToDisplay,
+  convertCmToDisplay,
+  getWeightUnit,
+  getMeasurementUnit
+} from '../../utils/formatting/units';
 
 const TYPE_LABELS: Record<MeasurementType, string> = {
   weight: 'Weight',
@@ -76,11 +83,26 @@ export default function MeasurementHistoryScreen() {
     );
   }
 
-  const rawPoints = entries.map((e) => ({ timestamp: e.recordedAt, value: e.value }));
-  const trendPoints = computeRollingAverage(entries);
+  const system = getUnitSystem(profile);
+  const displayUnit = type === 'weight'
+    ? getWeightUnit(system)
+    : (type === 'body_fat' ? '%' : getMeasurementUnit(system));
+
+  // Helper to convert single measurement values
+  const convertVal = (v: number) => {
+    return type === 'weight'
+      ? convertWeightToDisplay(v, system)
+      : (type === 'body_fat' ? v : convertCmToDisplay(v, system));
+  };
+
+  const rawPoints = entries.map((e) => ({ timestamp: e.recordedAt, value: convertVal(e.value) }));
+  const trendPoints = computeRollingAverage(entries).map((p) => ({ timestamp: p.timestamp, value: convertVal(p.value) }));
   const latest = entries.length > 0 ? entries[entries.length - 1] : null;
   const prev = entries.length > 1 ? entries[entries.length - 2] : null;
-  const delta = latest && prev ? latest.value - prev.value : null;
+  
+  const displayLatestVal = latest ? convertVal(latest.value) : null;
+  const displayPrevVal = prev ? convertVal(prev.value) : null;
+  const delta = displayLatestVal !== null && displayPrevVal !== null ? displayLatestVal - displayPrevVal : null;
 
   // Filter entries for the list based on selected time range
   const rangeMs: Record<TimeRange, number> = {
@@ -107,7 +129,7 @@ export default function MeasurementHistoryScreen() {
             {/* Current value hero */}
             <View style={styles.heroCard}>
               <Text style={styles.heroValue}>
-                {latest ? `${latest.value} ${unit}` : '—'}
+                {displayLatestVal !== null ? `${displayLatestVal.toFixed(1)} ${displayUnit}` : '—'}
               </Text>
               <Text style={styles.heroLabel}>Current {TYPE_LABELS[type]}</Text>
               {delta !== null && (
@@ -117,7 +139,7 @@ export default function MeasurementHistoryScreen() {
                     { color: delta < 0 ? colors.primary : colors.danger },
                   ]}
                 >
-                  {delta > 0 ? '+' : ''}{delta.toFixed(1)} {unit} from previous
+                  {delta > 0 ? '+' : ''}{delta.toFixed(1)} {displayUnit} from previous
                 </Text>
               )}
             </View>
@@ -127,12 +149,12 @@ export default function MeasurementHistoryScreen() {
               rawPoints={rawPoints}
               trendPoints={trendPoints}
               projection={[]}
-              targetValue={latest?.value ?? 0}
+              targetValue={displayLatestVal ?? 0}
               height={200}
               showTimeFilter={true}
               timeRange={timeRange}
               onTimeRangeChange={setTimeRange}
-              unit={unit}
+              unit={displayUnit}
             />
 
             <Text style={styles.sectionLabel}>HISTORY</Text>
@@ -145,11 +167,12 @@ export default function MeasurementHistoryScreen() {
             day: 'numeric',
             year: 'numeric',
           });
+          const itemDisplayVal = convertVal(item.value);
           return (
             <View style={styles.entryRow}>
               <Text style={styles.entryDate}>{dateStr}</Text>
               <Text style={styles.entryValue}>
-                {item.value} {unit}
+                {itemDisplayVal.toFixed(1)} {displayUnit}
               </Text>
             </View>
           );

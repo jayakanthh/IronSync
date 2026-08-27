@@ -5,21 +5,297 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { Settings, Share2, TrendingUp, Award, Dumbbell, Clock, History, ChevronRight, Camera, Target, Scale, Zap, Utensils } from 'lucide-react-native';
-import Svg, { Polyline } from 'react-native-svg';
-import { colors, spacing, radius } from '../../theme/colors';
+import {
+  Settings, Share2, TrendingUp, Award, Dumbbell, Clock, History, ChevronRight,
+  ChevronLeft, ChevronDown, ChevronUp, Camera, Target, Scale, Zap, Utensils, Activity, Calendar
+} from 'lucide-react-native';
+import Svg, { Polyline, Rect, Line, Text as SvgText } from 'react-native-svg';
+import { colors, spacing, radius, useTheme } from '../../theme/colors';
 import { useCurrentUser } from '../../context/CurrentUser';
 import {
   currentUserId, signOutUser, getMeasurementHistory, getActiveGoal,
   getExercisesByIds, getWorkoutHistory, searchExercises, getPersonalRecords, getFoodLog
 } from '../../services/index';
 import { getAvatarBg } from '../../utils/formatting/avatarColors';
-import { logMeasurement } from '../../services/measurements/measurements';
+import {
+  getUnitSystem,
+  convertWeightToDisplay,
+  getWeightUnit,
+  convertCmToDisplay,
+  getMeasurementUnit,
+  convertWeightToCanonical,
+  convertCmToCanonical
+} from '../../utils/formatting/units';
+import { logMeasurement, getGoals } from '../../services/measurements/measurements';
 import { todayISO } from '../../utils/formatting/dates';
 import type { MeasurementEntry, MeasurementGoal, MeasurementType, Workout, Exercise, PersonalRecord } from '../../models/index';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
+import type { MuscleId } from '../../components/anatomy';
+import { THEME_HEAT_PALETTES, DEFAULT_HEAT_PALETTE } from '../../components/anatomy';
+import { mapRawToLovableMuscleId } from '../../utils/muscleHeatmap';
+import ExpandableMeasurementCard from '../../components/measurements/ExpandableMeasurementCard';
 
 type MeTab = 'overview' | 'exercises' | 'measures' | 'photos';
+type OverviewSubTab = 'recent' | 'muscles';
+
+// Standard 12 Muscle Taxonomy
+export const STANDARD_MUSCLES = [
+  'Chest',
+  'Back',
+  'Shoulders',
+  'Biceps',
+  'Triceps',
+  'Forearms',
+  'Abs',
+  'Obliques',
+  'Quads',
+  'Hamstrings',
+  'Glutes',
+  'Calves',
+] as const;
+
+export type StandardMuscle = typeof STANDARD_MUSCLES[number];
+
+export function mapToStandardMuscle(raw: string): StandardMuscle | null {
+  const n = (raw || '').toLowerCase().trim();
+  if (n.includes('pec') || n.includes('chest')) return 'Chest';
+  if (n.includes('lat') || n.includes('trap') || n.includes('back') || n.includes('spine') || n.includes('rhomboid') || n.includes('teres')) return 'Back';
+  if (n.includes('delt') || n.includes('shoulder')) return 'Shoulders';
+  if (n.includes('bicep') || n.includes('brachialis')) return 'Biceps';
+  if (n.includes('tricep')) return 'Triceps';
+  if (n.includes('forearm') || n.includes('wrist') || n.includes('grip')) return 'Forearms';
+  if (n.includes('abdom') || n.includes('abs') || n.includes('core')) return 'Abs';
+  if (n.includes('oblique') || n.includes('serratus')) return 'Obliques';
+  if (n.includes('quad') || n.includes('adductor') || n.includes('thigh') || n.includes('sartorius')) return 'Quads';
+  if (n.includes('hamstring') || n.includes('biceps femoris')) return 'Hamstrings';
+  if (n.includes('glute') || n.includes('buttock')) return 'Glutes';
+  if (n.includes('calf') || n.includes('calve') || n.includes('gastro') || n.includes('soleus') || n.includes('tibialis')) return 'Calves';
+  return null;
+}
+
+// Calendar Week Helper (Monday - Sunday)
+function getStartOfWeek(date: Date = new Date()): number {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - (day === 0 ? 6 : day - 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function getEndOfWeek(date: Date = new Date()): number {
+  const start = getStartOfWeek(date);
+  return start + 7 * 24 * 60 * 60 * 1000 - 1;
+}
+
+export interface MuscleWeeklyAnalytics {
+  name: StandardMuscle;
+  setsThisWeek: number;
+  volumeThisWeekKg: number;
+  recoveryPercentage: number;
+  recoveryStatus: 'Full' | 'Good' | 'Moderate' | 'Low';
+  lastTrainedDate: string | null;
+  recentExercises: {
+    name: string;
+    bestSet: string;
+  }[];
+  weeklyVolumeTrend: {
+    weekLabel: string;
+    volume: number;
+  }[];
+}
+
+// Compute Muscle Analytics (Weekly Sets, Volume, Recovery %, Recent Exercises, 4-Week Trend)
+function computeMuscleAnalytics(
+  workouts: Workout[],
+  exercisesMap: Record<string, Exercise>,
+  system: 'metric' | 'imperial'
+): MuscleWeeklyAnalytics[] {
+  const now = Date.now();
+  const startOfWeek = getStartOfWeek(new Date(now));
+  const endOfWeek = getEndOfWeek(new Date(now));
+  const weightUnit = getWeightUnit(system);
+
+  // 4 Week intervals for trend
+  const weeks = [
+    { label: 'W1', start: startOfWeek - 21 * 86400000, end: startOfWeek - 14 * 86400000 - 1 },
+    { label: 'W2', start: startOfWeek - 14 * 86400000, end: startOfWeek - 7 * 86400000 - 1 },
+    { label: 'W3', start: startOfWeek - 7 * 86400000, end: startOfWeek - 1 },
+    { label: 'W4', start: startOfWeek, end: endOfWeek },
+  ];
+
+  const sortedWorkouts = [...workouts].sort((a, b) => b.createdAt - a.createdAt);
+
+  return STANDARD_MUSCLES.map((muscle) => {
+    let setsThisWeek = 0;
+    let volumeThisWeekKg = 0;
+    const weekVolumesKg = [0, 0, 0, 0];
+
+    const recentExerciseMap: Map<string, { name: string; maxWeightKg: number; reps: number; timestamp: number }> = new Map();
+    let lastTrainedTimestamp: number | null = null;
+    let lastTrainedSets = 0;
+
+    for (const wkt of sortedWorkouts) {
+      let workoutTargetedMuscle = false;
+      let sessionSets = 0;
+
+      for (const entry of wkt.entries) {
+        const ex = exercisesMap[entry.exerciseId];
+        if (!ex) continue;
+
+        const primaryMatch = mapToStandardMuscle(ex.muscleGroup) === muscle;
+        const secondaryMatch = (ex.secondaryMuscles || []).some((sm: string) => mapToStandardMuscle(sm) === muscle);
+
+        if (primaryMatch || secondaryMatch) {
+          workoutTargetedMuscle = true;
+          const completedSets = entry.sets.filter((s: any) => s.reps > 0);
+          sessionSets += completedSets.length;
+
+          // Sets and volume in current calendar week
+          if (wkt.createdAt >= startOfWeek && wkt.createdAt <= endOfWeek) {
+            setsThisWeek += completedSets.length;
+            for (const s of completedSets) {
+              volumeThisWeekKg += (s.weightKg || 0) * (s.reps || 0);
+            }
+          }
+
+          // Volume trend per week
+          for (let wi = 0; wi < weeks.length; wi++) {
+            if (wkt.createdAt >= weeks[wi].start && wkt.createdAt <= weeks[wi].end) {
+              for (const s of completedSets) {
+                weekVolumesKg[wi] += (s.weightKg || 0) * (s.reps || 0);
+              }
+            }
+          }
+
+          // Track unique recent exercises
+          if (!recentExerciseMap.has(entry.exerciseId) && completedSets.length > 0) {
+            let maxW = 0;
+            let maxReps = 0;
+            for (const s of completedSets) {
+              if (s.weightKg >= maxW) {
+                maxW = s.weightKg;
+                maxReps = s.reps;
+              }
+            }
+            recentExerciseMap.set(entry.exerciseId, {
+              name: ex.name,
+              maxWeightKg: maxW,
+              reps: maxReps,
+              timestamp: wkt.createdAt,
+            });
+          }
+        }
+      }
+
+      if (workoutTargetedMuscle && lastTrainedTimestamp === null) {
+        lastTrainedTimestamp = wkt.createdAt;
+        lastTrainedSets = sessionSets;
+      }
+    }
+
+    // Data-driven training-load / time-decay recovery calculation
+    let recoveryPercentage = 100;
+    if (lastTrainedTimestamp !== null) {
+      const hoursSince = Math.max(0, (now - lastTrainedTimestamp) / (1000 * 3600));
+      if (hoursSince < 72) {
+        const acuteFatigue = Math.min(80, lastTrainedSets * 4 + 20);
+        const recoveredFraction = Math.pow(hoursSince / 72, 1.25);
+        recoveryPercentage = Math.round(100 - acuteFatigue * (1 - recoveredFraction));
+        recoveryPercentage = Math.max(15, Math.min(100, recoveryPercentage));
+      } else {
+        recoveryPercentage = 100;
+      }
+    }
+
+    let recoveryStatus: 'Full' | 'Good' | 'Moderate' | 'Low' = 'Full';
+    if (recoveryPercentage < 50) recoveryStatus = 'Low';
+    else if (recoveryPercentage < 75) recoveryStatus = 'Moderate';
+    else if (recoveryPercentage < 95) recoveryStatus = 'Good';
+    else recoveryStatus = 'Full';
+
+    const recentExercises = Array.from(recentExerciseMap.values())
+      .slice(0, 4)
+      .map(e => {
+        const displayW = convertWeightToDisplay(e.maxWeightKg, system);
+        return {
+          name: e.name,
+          bestSet: e.maxWeightKg > 0 ? `${displayW} ${weightUnit} × ${e.reps}` : `${e.reps} reps`,
+        };
+      });
+
+    const weeklyVolumeTrend = weeks.map((wk, idx) => ({
+      weekLabel: wk.label,
+      volume: Math.round(convertWeightToDisplay(weekVolumesKg[idx], system)),
+    }));
+
+    return {
+      name: muscle,
+      setsThisWeek,
+      volumeThisWeekKg,
+      recoveryPercentage,
+      recoveryStatus,
+      lastTrainedDate: lastTrainedTimestamp ? new Date(lastTrainedTimestamp).toLocaleDateString() : null,
+      recentExercises,
+      weeklyVolumeTrend,
+    };
+  });
+}
+
+// Compact Weekly Volume Bar Chart
+function MuscleVolumeBarChart({
+  trend,
+  unit,
+  primaryColor,
+  surfaceElevatedColor,
+  textColor,
+  textMutedColor,
+}: {
+  trend: { weekLabel: string; volume: number }[];
+  unit: string;
+  primaryColor: string;
+  surfaceElevatedColor: string;
+  textColor: string;
+  textMutedColor: string;
+}) {
+  const maxVol = Math.max(...trend.map(t => t.volume), 1);
+  const chartHeight = 54;
+  const barWidth = 32;
+
+  return (
+    <View style={{ gap: 6, marginTop: 4 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end', height: chartHeight }}>
+        {trend.map((t, i) => {
+          const heightPercent = t.volume > 0 ? Math.max(0.15, t.volume / maxVol) : 0.06;
+          const barH = heightPercent * (chartHeight - 16);
+          const isLatest = i === trend.length - 1;
+
+          return (
+            <View key={i} style={{ alignItems: 'center', gap: 3 }}>
+              <Text style={{ fontSize: 8, fontWeight: '700', color: isLatest ? primaryColor : textMutedColor }}>
+                {t.volume > 0 ? (t.volume >= 1000 ? `${(t.volume / 1000).toFixed(1)}k` : `${t.volume}`) : '—'}
+              </Text>
+              <View
+                style={{
+                  width: barWidth,
+                  height: barH,
+                  backgroundColor: isLatest ? primaryColor : surfaceElevatedColor,
+                  borderRadius: 3,
+                }}
+              />
+              <Text style={{ fontSize: 9, fontWeight: '700', color: isLatest ? textColor : textMutedColor }}>
+                {t.weekLabel}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      <Text style={{ fontSize: 9, color: textMutedColor, textAlign: 'center' }}>
+        Volume ({unit}) · 4-Week Trend
+      </Text>
+    </View>
+  );
+}
 
 const MEASUREMENT_TILES: { type: MeasurementType; label: string; unit: string }[] = [
   { type: 'weight', label: 'Body Weight', unit: 'kg' },
@@ -47,7 +323,6 @@ const LOG_FIELDS: { type: MeasurementType; label: string; unit: string; placehol
   { type: 'calf', label: 'Calf', unit: 'cm', placeholder: 'Optional' },
 ];
 
-// Mini sparkline trend chart
 function MiniTrendChart({ history }: { history: MeasurementEntry[] }) {
   if (history.length < 2) return null;
   const values = history.map(h => h.value);
@@ -55,9 +330,8 @@ function MiniTrendChart({ history }: { history: MeasurementEntry[] }) {
   const max = Math.max(...values);
   const range = max - min || 1;
   
-  // Create 5 coordinate points mapped onto 60x22 SVG container
   const points = history
-    .slice(-5) // show last 5 logs max
+    .slice(-5)
     .map((h, idx, arr) => {
       const x = arr.length > 1 ? (idx / (arr.length - 1)) * 60 : 30;
       const y = 20 - ((h.value - min) / range) * 16;
@@ -75,22 +349,39 @@ function MiniTrendChart({ history }: { history: MeasurementEntry[] }) {
 }
 
 export default function ProfileScreen() {
+  const { theme } = useTheme();
   const { profile } = useCurrentUser();
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
+  const system = getUnitSystem(profile);
   const [activeTab, setActiveTab] = useState<MeTab>('overview');
+
+  // Overview sub-tab state
+  const [overviewSubTab, setOverviewSubTab] = useState<OverviewSubTab>('recent');
+  const [expandedMuscle, setExpandedMuscle] = useState<string | null>(null);
+
+  const activeHeatPalette = useMemo(() => {
+    const themeId = (theme as any)?.id || 'signature';
+    return THEME_HEAT_PALETTES[themeId] || DEFAULT_HEAT_PALETTE;
+  }, [theme]);
+
+  // Month selector state for Muscle Activity anatomy
+  const [selectedMonthDate, setSelectedMonthDate] = useState<Date>(new Date());
 
   // Overview states
   const [workouts, setWorkouts] = useState<Workout[]>([]);
-  const [musclePrimary, setMusclePrimary] = useState<Set<string>>(new Set());
-  const [muscleSecondary, setMuscleSecondary] = useState<Set<string>>(new Set());
+  const [exercisesMap, setExercisesMap] = useState<Record<string, Exercise>>({});
   const [loadingOverview, setLoadingOverview] = useState(false);
+  const [errorOverview, setErrorOverview] = useState(false);
 
   // Measures states
   const [latestByType, setLatestByType] = useState<Record<string, MeasurementEntry | null>>({});
   const [historyByType, setHistoryByType] = useState<Record<string, MeasurementEntry[]>>({});
+  const [goalsByType, setGoalsByType] = useState<Record<string, MeasurementGoal>>({});
   const [activeGoal, setActiveGoal] = useState<MeasurementGoal | null>(null);
+  const [expandedMeasurement, setExpandedMeasurement] = useState<string | null>('weight');
   const [loadingMeasures, setLoadingMeasures] = useState(false);
+  const [errorMeasures, setErrorMeasures] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
   const [logValues, setLogValues] = useState<Record<string, string>>({});
   const [logSaving, setLogSaving] = useState(false);
@@ -101,33 +392,32 @@ export default function ProfileScreen() {
   const [exerciseResults, setExerciseResults] = useState<Exercise[]>([]);
   const [loadingEx, setLoadingEx] = useState(false);
   const [prs, setPrs] = useState<Record<string, PersonalRecord>>({});
+  const [prExercises, setPrExercises] = useState<Record<string, Exercise>>({});
 
   // Responsive dimension variables
   const windowWidth = Dimensions.get('window').width;
-  const silhouetteSize = Math.floor((windowWidth - 48) / 2); // Perfectly fills horizontal gap on any device
+  const silhouetteSize = Math.floor((windowWidth - 48) / 2);
 
   const loadOverviewData = useCallback(async () => {
     const uid = currentUserId();
     if (!uid) return;
     setLoadingOverview(true);
+    setErrorOverview(false);
     try {
-      const wkts = await getWorkoutHistory(uid, 20);
+      const wkts = await getWorkoutHistory(uid, 50);
       setWorkouts(wkts);
 
-      // Aggregate muscles trained this week (last 7 days)
-      const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      const recentWkts = wkts.filter(w => w.createdAt >= weekAgo);
-      const exIds = Array.from(new Set(recentWkts.flatMap(w => w.entries.map(e => e.exerciseId))));
-      if (exIds.length > 0) {
-        const exercises = await getExercisesByIds(exIds.slice(0, 20));
-        const { primary, secondary } = aggregateMusclesFromExercises(exercises);
-        setMusclePrimary(primary);
-        setMuscleSecondary(secondary);
-      } else {
-        setMusclePrimary(new Set());
-        setMuscleSecondary(new Set());
+      const allExIds = Array.from(new Set(wkts.flatMap(w => w.entries.map(e => e.exerciseId))));
+      if (allExIds.length > 0) {
+        const exercises = await getExercisesByIds(allExIds);
+        const exMap: Record<string, Exercise> = {};
+        exercises.forEach(e => { exMap[e.id] = e; });
+        setExercisesMap(exMap);
       }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      setErrorOverview(true);
+    }
     finally { setLoadingOverview(false); }
   }, []);
 
@@ -135,9 +425,10 @@ export default function ProfileScreen() {
     const uid = currentUserId();
     if (!uid) return;
     setLoadingMeasures(true);
+    setErrorMeasures(false);
     try {
-      const [goal, ...allData] = await Promise.all([
-        getActiveGoal(uid),
+      const [allGoals, ...allData] = await Promise.all([
+        getGoals(uid, 'active'),
         ...MEASUREMENT_TILES.map(t => getMeasurementHistory(uid, t.type)),
       ]);
       const byType: Record<string, MeasurementEntry | null> = {};
@@ -147,18 +438,26 @@ export default function ProfileScreen() {
         byType[t.type] = data.length > 0 ? data[data.length - 1] : null;
         hist[t.type] = data;
       });
-      setActiveGoal(goal);
+
+      const gMap: Record<string, MeasurementGoal> = {};
+      allGoals.forEach(g => {
+        gMap[g.measurementType] = g;
+      });
+      setGoalsByType(gMap);
+      setActiveGoal(allGoals.length > 0 ? allGoals[0] : null);
       setLatestByType(byType);
       setHistoryByType(hist);
 
-      // Grab today's caloric intake average
       const meals = await getFoodLog(uid, todayISO());
       if (meals && meals.length > 0) {
         setTodayCalories(meals.reduce((sum, item) => sum + (item.calories || 0), 0));
       } else {
         setTodayCalories(0);
       }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      setErrorMeasures(true);
+    }
     finally { setLoadingMeasures(false); }
   }, []);
 
@@ -172,6 +471,14 @@ export default function ProfileScreen() {
         dict[p.exerciseId] = p;
       });
       setPrs(dict);
+
+      const exIds = prList.map(p => p.exerciseId);
+      if (exIds.length > 0) {
+        const exercises = await getExercisesByIds(exIds);
+        const exDict: Record<string, Exercise> = {};
+        exercises.forEach(e => { exDict[e.id] = e; });
+        setPrExercises(exDict);
+      }
     } catch (e) { console.error(e); }
   }, []);
 
@@ -220,427 +527,682 @@ export default function ProfileScreen() {
     } finally { setLogSaving(false); }
   };
 
+  // Monthly muscle aggregation for the Anatomy Hero
+  const { monthlyMuscles, monthlyMuscleSetCounts } = useMemo(() => {
+    const start = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth(), 1).getTime();
+    const end = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+
+    const monthWorkouts = workouts.filter(w => w.createdAt >= start && w.createdAt <= end);
+    const exIds = Array.from(new Set(monthWorkouts.flatMap(w => w.entries.map((e: any) => e.exerciseId))));
+    const exercises = exIds.map(id => exercisesMap[id]).filter(Boolean);
+
+    const counts: Partial<Record<MuscleId, number>> = {};
+    for (const w of monthWorkouts) {
+      for (const entry of w.entries) {
+        const ex = exercisesMap[entry.exerciseId];
+        if (!ex) continue;
+        const pId = mapRawToLovableMuscleId(ex.muscleGroup);
+        const completedSets = (entry.sets || []).filter((s: any) => (s.reps || 0) > 0).length;
+        if (pId) {
+          counts[pId] = (counts[pId] || 0) + completedSets;
+        }
+        for (const sm of (ex.secondaryMuscles ?? []) as string[]) {
+          const sId = mapRawToLovableMuscleId(sm);
+          if (sId && sId !== pId) {
+            counts[sId] = (counts[sId] || 0) + Math.round(completedSets * 0.5);
+          }
+        }
+      }
+    }
+
+    return {
+      monthlyMuscles: aggregateMusclesFromExercises(exercises),
+      monthlyMuscleSetCounts: counts,
+    };
+  }, [workouts, exercisesMap, selectedMonthDate]);
+
+  // Weekly muscle analytics for the Muscles Tab
+  const weeklyMuscleAnalytics = useMemo(() => {
+    return computeMuscleAnalytics(workouts, exercisesMap, system);
+  }, [workouts, exercisesMap, system]);
+
+  // General weekly stats (top summary cards)
+  const { sessionsThisWeek, totalVolumeThisWeek } = useMemo(() => {
+    const startOfWeek = getStartOfWeek(new Date());
+    const endOfWeek = getEndOfWeek(new Date());
+    const wk = workouts.filter(w => w.createdAt >= startOfWeek && w.createdAt <= endOfWeek);
+    const vol = wk.reduce((sum, w) => sum + (w.totalVolumeKg || 0), 0);
+    return { sessionsThisWeek: wk.length, totalVolumeThisWeek: vol };
+  }, [workouts]);
+
+  // Month date range formatted string
+  const monthRangeText = useMemo(() => {
+    const now = new Date();
+    const isCurrent = selectedMonthDate.getFullYear() === now.getFullYear() && selectedMonthDate.getMonth() === now.getMonth();
+    const monthShort = selectedMonthDate.toLocaleDateString('en-US', { month: 'short' });
+    if (isCurrent) {
+      return `${monthShort} 1 – ${monthShort} ${now.getDate()}`;
+    }
+    const lastDay = new Date(selectedMonthDate.getFullYear(), selectedMonthDate.getMonth() + 1, 0).getDate();
+    return `${monthShort} 1 – ${monthShort} ${lastDay}`;
+  }, [selectedMonthDate]);
+
+  const isCurrentMonth = useMemo(() => {
+    const now = new Date();
+    return selectedMonthDate.getFullYear() === now.getFullYear() && selectedMonthDate.getMonth() === now.getMonth();
+  }, [selectedMonthDate]);
+
+  const currentWeekRangeText = useMemo(() => {
+    const start = new Date(getStartOfWeek(new Date()));
+    const end = new Date(getEndOfWeek(new Date()));
+    const sStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const eStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `${sStr} – ${eStr}`;
+  }, []);
+
   if (!profile) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator color={colors.primary} />
+      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator color={theme.colors.primary} />
       </View>
     );
   }
 
-  const initials = (profile.displayName || '?').slice(0, 2).toUpperCase();
-  const avatarColor = getAvatarBg(profile.displayName || 'U');
-
-  const latestWeight = latestByType['weight'];
-  const weightChange = (() => {
-    return latestWeight ? latestWeight.value.toFixed(1) + ' kg' : null;
-  })();
-
-  const totalVolumeThisWeek = useMemo(() => {
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    return workouts
-      .filter(w => w.createdAt >= weekAgo)
-      .reduce((sum, w) => sum + (w.totalVolumeKg ?? 0), 0);
-  }, [workouts]);
-
-  const sessionsThisWeek = useMemo(() => {
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    return workouts.filter(w => w.createdAt >= weekAgo).length;
-  }, [workouts]);
-
-  // ── Renders ──────────────────────────────────────────────────────────────────
-
-  const renderOverview = () => (
-    <ScrollView contentContainerStyle={[styles.tabContent, { paddingBottom: insets.bottom + 80 }]} showsVerticalScrollIndicator={false}>
-      {/* Training Summary Cards */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNum}>{sessionsThisWeek}</Text>
-          <Text style={styles.statLbl}>Sessions This Week</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNum}>{profile.currentStreak || 0}🔥</Text>
-          <Text style={styles.statLbl}>Day Streak</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNum}>{totalVolumeThisWeek > 0 ? Math.round(totalVolumeThisWeek / 1000) + 'k' : '—'}</Text>
-          <Text style={styles.statLbl}>Vol (t) This Week</Text>
-        </View>
-      </View>
-
-      {/* Muscle Activity Section */}
-      <View style={styles.muscleContainerCard}>
-        <Text style={styles.muscleSectionHeader}>THIS MONTH · MUSCLE ACTIVITY</Text>
-        
-        {loadingOverview ? (
-          <ActivityIndicator color={colors.primary} style={{ marginVertical: 40 }} />
-        ) : (
-          <View style={styles.bodyVizRow}>
-            <View style={[styles.bodyVizItem, { width: silhouetteSize }]}>
-              <Text style={styles.bodyVizLabel}>ANTERIOR (FRONT)</Text>
-              <MuscleSilhouette primaryMuscles={musclePrimary} secondaryMuscles={muscleSecondary} view="front" size={silhouetteSize - 16} />
-            </View>
-            <View style={[styles.bodyVizItem, { width: silhouetteSize }]}>
-              <Text style={styles.bodyVizLabel}>POSTERIOR (BACK)</Text>
-              <MuscleSilhouette primaryMuscles={musclePrimary} secondaryMuscles={muscleSecondary} view="back" size={silhouetteSize - 16} />
-            </View>
-          </View>
-        )}
-
-        {/* Legend */}
-        <View style={styles.legendRow}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
-            <Text style={styles.legendText}>Primary Focus</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#166e57' }]} />
-            <Text style={styles.legendText}>Secondary Helpers</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Workout History Section */}
-      <View style={styles.historySectionHeaderRow}>
-        <Text style={styles.sectionLabel}>RECENT WORKOUTS</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('WorkoutHistory')}>
-          <Text style={styles.seeAllLink}>See All ({workouts.length})</Text>
-        </TouchableOpacity>
-      </View>
-
-      {workouts.slice(0, 5).map(w => (
-        <TouchableOpacity key={w.id} style={styles.workoutPremiumCard} activeOpacity={0.8} onPress={() => navigation.navigate('WorkoutDetail', { workoutId: w.id, userId: profile?.id })}>
-          <View style={styles.workoutCardTop}>
-            <View style={styles.workoutTitleCol}>
-              <Text style={styles.workoutName}>{w.planName || 'Custom Workout'}</Text>
-              {w.workoutType === 'duo' && w.duoPartnerName && (
-                <View style={styles.duoBadge}>
-                  <Text style={styles.duoBadgeText}>🤝 Duo with {w.duoPartnerName}</Text>
-                </View>
-              )}
-              <Text style={styles.workoutDate}>
-                {new Date(w.createdAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-              </Text>
-            </View>
-            {w.totalVolumeKg ? (
-              <View style={styles.volBadge}>
-                <Text style={styles.volBadgeVal}>{Math.round(w.totalVolumeKg).toLocaleString()} kg</Text>
-              </View>
-            ) : null}
-          </View>
-          <View style={styles.workoutCardDivider} />
-          <View style={styles.workoutCardBottom}>
-            <View style={styles.workoutStatCol}>
-              <Clock size={13} color={colors.textMuted} />
-              <Text style={styles.workoutStatVal}>{w.durationMinutes ? `${w.durationMinutes} min` : '—'}</Text>
-            </View>
-            <View style={styles.workoutStatCol}>
-              <Award size={13} color={colors.milestone} />
-              <Text style={styles.workoutStatVal}>{w.entries.length} Exercises</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-      ))}
-
-      {workouts.length === 0 && !loadingOverview && (
-        <View style={styles.emptyBox}>
-          <Dumbbell size={28} color={colors.textMuted} />
-          <Text style={styles.emptyText}>No workout logs found. Start logging to build your profile history!</Text>
-        </View>
-      )}
-    </ScrollView>
-  );
-
-  const renderExercises = () => (
-    <ScrollView contentContainerStyle={[styles.tabContent, { paddingBottom: insets.bottom + 80 }]} showsVerticalScrollIndicator={false}>
-      <View style={styles.searchRow}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search your library & PRs..."
-          placeholderTextColor={colors.textMuted}
-          value={exerciseSearch}
-          onChangeText={setExerciseSearch}
-        />
-      </View>
-
-      <Text style={styles.sectionLabel}>
-        {exerciseSearch.trim() ? 'SEARCH RESULTS' : 'RECENTLY PERFORMED'}
-      </Text>
-
-      {loadingEx ? (
-        <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
-      ) : exerciseResults.length > 0 ? (
-        exerciseResults.map((ex) => {
-          const pr = prs[ex.id];
-          return (
-            <View key={ex.id} style={styles.exercisePremiumCard}>
-              <View style={styles.exCardTop}>
-                <View style={styles.exThumbnail}>
-                  <Text style={styles.exThumbText}>{(ex.muscleGroup || '?').slice(0, 2).toUpperCase()}</Text>
-                </View>
-                <View style={styles.exDetails}>
-                  <Text style={styles.exTitle} numberOfLines={1}>{ex.name}</Text>
-                  <Text style={styles.exSubtitle}>{ex.muscleGroup} • {ex.equipment || 'No equipment'}</Text>
-                </View>
-              </View>
-              {pr ? (
-                <View style={styles.exPrRow}>
-                  <View style={styles.prBox}>
-                    <Text style={styles.prLabel}>EST. 1RM</Text>
-                    <Text style={styles.prValue}>{pr.estimated1RM.toFixed(1)} kg</Text>
-                  </View>
-                  <View style={styles.prBox}>
-                    <Text style={styles.prLabel}>BEST LIFT</Text>
-                    <Text style={styles.prValue}>{pr.bestWeightKg} kg × {pr.bestReps}</Text>
-                  </View>
-                  <View style={styles.prTrendBadge}>
-                    <TrendingUp size={12} color={colors.primary} />
-                    <Text style={styles.trendPercent}>Active</Text>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.exPrRow}>
-                  <Text style={styles.noPrText}>No PR logged yet. Hit PRs in workouts.</Text>
-                </View>
-              )}
-            </View>
-          );
-        })
-      ) : exerciseSearch.trim() ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyText}>No matching exercises found.</Text>
-        </View>
-      ) : (
-        // Renders exercises that have PRs as their recently performed list
-        Object.keys(prs).length > 0 ? (
-          Object.values(prs).slice(0, 8).map((pr) => {
-            // Placeholder exercise metadata resolution
-            return (
-              <View key={pr.exerciseId} style={styles.exercisePremiumCard}>
-                <View style={styles.exCardTop}>
-                  <View style={[styles.exThumbnail, { backgroundColor: 'rgba(6,182,212,0.15)' }]}>
-                    <Award size={16} color="#06b6d4" />
-                  </View>
-                  <View style={styles.exDetails}>
-                    <Text style={styles.exTitle}>Exercise ID: {pr.exerciseId.slice(0, 16)}...</Text>
-                    <Text style={styles.exSubtitle}>Personal Record achieved on {pr.achievedOn}</Text>
-                  </View>
-                </View>
-                <View style={styles.exPrRow}>
-                  <View style={styles.prBox}>
-                    <Text style={styles.prLabel}>EST. 1RM</Text>
-                    <Text style={styles.prValue}>{pr.estimated1RM.toFixed(1)} kg</Text>
-                  </View>
-                  <View style={styles.prBox}>
-                    <Text style={styles.prLabel}>BEST LIFT</Text>
-                    <Text style={styles.prValue}>{pr.bestWeightKg} kg × {pr.bestReps}</Text>
-                  </View>
-                  <View style={styles.prTrendBadge}>
-                    <TrendingUp size={12} color={colors.primary} />
-                    <Text style={styles.trendPercent}>+PR</Text>
-                  </View>
-                </View>
-              </View>
-            );
-          })
-        ) : (
-          <View style={styles.emptyBox}>
-            <Dumbbell size={28} color={colors.textMuted} />
-            <Text style={styles.emptyText}>Exercises will appear here once you've logged workouts and set personal records.</Text>
-          </View>
-        )
-      )}
-    </ScrollView>
-  );
-
-  const renderMeasures = () => {
-    return (
-      <ScrollView contentContainerStyle={[styles.tabContent, { paddingBottom: insets.bottom + 80 }]} showsVerticalScrollIndicator={false}>
-        <View style={styles.measuresActionRow}>
-          <TouchableOpacity style={styles.logCTA} onPress={() => setShowLogModal(true)}>
-            <Scale size={16} color={colors.primaryDark} style={{ marginRight: 6 }} />
-            <Text style={styles.logCTAText}>+ Log Measurements</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Active Weight Goal Card */}
-        {activeGoal ? (
-          <View style={styles.goalPremiumCard}>
-            <View style={styles.goalTopRow}>
-              <View>
-                <Text style={styles.goalLabel}>ACTIVE TARGET GOAL</Text>
-                <Text style={styles.goalTitle}>{activeGoal.type.replace(/_/g, ' ').toUpperCase()}</Text>
-              </View>
-              <Target size={20} color={colors.primary} />
-            </View>
-            <View style={styles.goalBodyRow}>
-              <Text style={styles.goalDetailVal}>{activeGoal.startValue} → {activeGoal.targetValue} {activeGoal.unit}</Text>
-              {latestWeight && (
-                <Text style={styles.goalCurrentVal}>Current: {latestWeight.value} {activeGoal.unit}</Text>
-              )}
-            </View>
-            <View style={styles.goalProgressBg}>
-              <View style={[styles.goalProgressFill, { width: `${Math.min(100, Math.round(Math.abs((latestWeight?.value ?? activeGoal.startValue) - activeGoal.startValue) / Math.max(1, Math.abs(activeGoal.startValue - activeGoal.targetValue)) * 100))}%` as any }]} />
-            </View>
-          </View>
-        ) : (
-          <TouchableOpacity style={styles.createGoalRowBtn} activeOpacity={0.8} onPress={() => navigation.navigate('GoalSetup')}>
-            <Target size={18} color={colors.primary} />
-            <Text style={styles.createGoalRowText}>Set a body metric target goal</Text>
-            <ChevronRight size={16} color={colors.primary} />
-          </TouchableOpacity>
-        )}
-
-        {/* Measures Grid list */}
-        <Text style={styles.sectionLabel}>BODY & METRIC STATS</Text>
-        
-        {/* Caloric intake card */}
-        <View style={styles.measureTileCard}>
-          <View style={styles.meaTileHeader}>
-            <View style={styles.meaTitleCol}>
-              <Text style={styles.meaTitle}>Caloric Intake</Text>
-              <Text style={styles.meaDate}>Today</Text>
-            </View>
-            <Utensils size={16} color={colors.warning} />
-          </View>
-          <View style={styles.meaTileBody}>
-            <Text style={styles.meaTileVal}>{todayCalories !== null ? todayCalories : '—'}</Text>
-            <Text style={styles.meaTileUnit}>kcal</Text>
-          </View>
-        </View>
-
-        {loadingMeasures ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
-        ) : (
-          <View style={styles.measuresGrid}>
-            {MEASUREMENT_TILES.map(t => {
-              const entry = latestByType[t.type];
-              const history = historyByType[t.type] || [];
-              return (
-                <TouchableOpacity
-                  key={t.type}
-                  style={styles.measureTileCard}
-                  activeOpacity={0.85}
-                  onPress={() => navigation.navigate('MeasurementHistory', { type: t.type, unit: t.unit })}
-                >
-                  <View style={styles.meaTileHeader}>
-                    <View style={styles.meaTitleCol}>
-                      <Text style={styles.meaTitle}>{t.label}</Text>
-                      <Text style={styles.meaDate}>
-                        {entry ? new Date(entry.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No logs'}
-                      </Text>
-                    </View>
-                    {history.length > 1 && <MiniTrendChart history={history} />}
-                  </View>
-                  <View style={styles.meaTileBody}>
-                    <Text style={styles.meaTileVal}>{entry ? entry.value : '—'}</Text>
-                    <Text style={styles.meaTileUnit}>{t.unit}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-      </ScrollView>
-    );
-  };
-
-  const renderPhotos = () => (
-    <View style={[styles.tabContent, styles.photosEmptyContainer]}>
-      <View style={styles.photosIconCircle}>
-        <Camera size={28} color={colors.textMuted} />
-      </View>
-      <Text style={styles.photosTitle}>Private Progress Photos</Text>
-      <Text style={styles.photosDesc}>
-        Track your body's physical transformation privately. Photo storage is not yet connected to your profile. All uploaded photos will be saved locally on your device.
-      </Text>
-      <TouchableOpacity style={styles.photosCta} activeOpacity={0.8}>
-        <Text style={styles.photosCtaText}>Upload Photo (Coming Soon)</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      {/* Profile Header */}
-      <View style={styles.profileHeader}>
-        <View style={[styles.profileAvatar, { backgroundColor: avatarColor }]}>
-          <Text style={styles.profileAvatarText}>{initials}</Text>
-        </View>
-        <View style={styles.profileInfo}>
-          <Text style={styles.profileName}>{profile.displayName}</Text>
-          {profile.username && <Text style={styles.profileUsername}>@{profile.username}</Text>}
-          <Text style={styles.profileGoal}>{profile.goal ? profile.goal.toUpperCase() : 'FITNESS PROFILE'}</Text>
+    <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: theme.colors.background }]}>
+      {/* Top Header */}
+      <View style={styles.header}>
+        <View style={styles.headerUser}>
+          <View style={[styles.avatar, { backgroundColor: getAvatarBg(profile.displayName || 'User') }]}>
+            <Text style={styles.avatarText}>
+              {(profile.displayName || 'U').slice(0, 2).toUpperCase()}
+            </Text>
+          </View>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>{profile.displayName || 'Iron Athlete'}</Text>
+            <Text style={styles.userSub}>@{profile.username || 'athlete'}</Text>
+          </View>
         </View>
         <View style={styles.profileActions}>
           <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Settings')}>
-            <Settings size={20} color={colors.textMuted} />
+            <Settings size={20} color={colors.text} />
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Weight display */}
-      {weightChange && (
-        <View style={styles.weightBanner}>
-          <Scale size={16} color={colors.primary} style={{ marginRight: 6 }} />
-          <Text style={styles.weightVal}>{weightChange}</Text>
-          <Text style={styles.weightLbl}>Current Weight</Text>
-        </View>
-      )}
-
-      {/* Tabs */}
+      {/* Main Tabs */}
       <View style={styles.tabs}>
-        {(['overview', 'exercises', 'measures', 'photos'] as MeTab[]).map(tab => (
+        {(['overview', 'exercises', 'measures', 'photos'] as MeTab[]).map(t => (
           <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.tabActive]}
-            onPress={() => setActiveTab(tab)}
+            key={t}
+            style={[styles.tab, activeTab === t && styles.tabActive]}
+            onPress={() => setActiveTab(t)}
           >
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-              {tab.toUpperCase()}
+            <Text style={[styles.tabText, activeTab === t && styles.tabTextActive]}>
+              {t.toUpperCase()}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* Tab Content */}
-      <View style={{ flex: 1 }}>
-        {activeTab === 'overview' && renderOverview()}
-        {activeTab === 'exercises' && renderExercises()}
-        {activeTab === 'measures' && renderMeasures()}
-        {activeTab === 'photos' && renderPhotos()}
-      </View>
+      <ScrollView contentContainerStyle={styles.tabContent} showsVerticalScrollIndicator={false}>
+        {/* ================================================================ */}
+        {/* TAB 1: OVERVIEW */}
+        {/* ================================================================ */}
+        {activeTab === 'overview' && (
+          errorOverview ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>Failed to load training overview.</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={loadOverviewData}>
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {/* Training Summary Cards */}
+              <View style={styles.statsRow}>
+                <View style={styles.statCard}>
+                  <Text style={styles.statNum}>{sessionsThisWeek}</Text>
+                  <Text style={styles.statLbl}>Sessions This Week</Text>
+                </View>
+                <View style={styles.statCard}>
+                  <Text style={styles.statNum}>{profile.currentStreak || 0}🔥</Text>
+                  <Text style={styles.statLbl}>Day Streak</Text>
+                </View>
+                <View style={styles.statCard}>
+                  <Text style={styles.statNum}>{totalVolumeThisWeek > 0 ? Math.round(totalVolumeThisWeek / 1000) + 'k' : '—'}</Text>
+                  <Text style={styles.statLbl}>Vol (t) This Week</Text>
+                </View>
+              </View>
 
-      {/* Log Measurements Modal */}
-      <Modal visible={showLogModal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowLogModal(false)}>
-        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Log Measurements</Text>
-            <TouchableOpacity onPress={() => setShowLogModal(false)} style={{ padding: spacing.xs }}>
-              <Text style={{ color: colors.textMuted, fontSize: 15 }}>Cancel</Text>
+              {/* Monthly Muscle Activity Section (HERO ANATOMY) */}
+              <View style={styles.muscleContainerCard}>
+                {/* Month Selector Bar */}
+                <View style={styles.monthSelectorRow}>
+                  <TouchableOpacity
+                    style={styles.monthNavBtn}
+                    onPress={() => setSelectedMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                  >
+                    <ChevronLeft size={18} color={theme.colors.textPrimary} />
+                  </TouchableOpacity>
+
+                  <View style={styles.monthTitleCol}>
+                    <Text style={[styles.monthTitleText, { color: theme.colors.textPrimary }]}>
+                      {selectedMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }).toUpperCase()}
+                    </Text>
+                    <Text style={[styles.monthDateRangeText, { color: theme.colors.textSecondary }]}>
+                      {monthRangeText} · MUSCLE ACTIVITY
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.monthNavBtn, isCurrentMonth && { opacity: 0.25 }]}
+                    disabled={isCurrentMonth}
+                    onPress={() => setSelectedMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                  >
+                    <ChevronRight size={18} color={theme.colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+                
+                {loadingOverview ? (
+                  <ActivityIndicator color={colors.primary} style={{ marginVertical: 40 }} />
+                ) : (
+                  <View style={styles.bodyVizRow}>
+                    <View style={[styles.bodyVizItem, { width: silhouetteSize }]}>
+                      <Text style={styles.bodyVizLabel}>ANTERIOR (FRONT)</Text>
+                      <MuscleSilhouette
+                        primaryMuscles={monthlyMuscles.primary}
+                        secondaryMuscles={monthlyMuscles.secondary}
+                        setCounts={monthlyMuscleSetCounts}
+                        view="front"
+                        size={silhouetteSize - 16}
+                      />
+                    </View>
+                    <View style={[styles.bodyVizItem, { width: silhouetteSize }]}>
+                      <Text style={styles.bodyVizLabel}>POSTERIOR (BACK)</Text>
+                      <MuscleSilhouette
+                        primaryMuscles={monthlyMuscles.primary}
+                        secondaryMuscles={monthlyMuscles.secondary}
+                        setCounts={monthlyMuscleSetCounts}
+                        view="back"
+                        size={silhouetteSize - 16}
+                      />
+                    </View>
+                  </View>
+                )}
+
+                {/* Heat Intensity Scale Legend */}
+                <View style={styles.legendContainer}>
+                  <View style={styles.heatScaleRow}>
+                    <Text style={[styles.heatScaleLabel, { color: theme.colors.textSecondary }]}>LOW</Text>
+                    <View style={styles.heatScaleBar}>
+                      {activeHeatPalette.map((col, idx) => (
+                        <View key={idx} style={[styles.heatScaleSegment, { backgroundColor: col }]} />
+                      ))}
+                    </View>
+                    <Text style={[styles.heatScaleLabel, { color: theme.colors.textSecondary }]}>HIGH</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* OVERVIEW SUB-TABS: [ RECENT EXERCISES ] [ MUSCLES ] */}
+              <View style={[styles.subTabRow, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                <TouchableOpacity
+                  style={[
+                    styles.subTabBtn,
+                    overviewSubTab === 'recent' && [styles.subTabBtnActive, { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.primary }]
+                  ]}
+                  onPress={() => setOverviewSubTab('recent')}
+                >
+                  <Text
+                    style={[
+                      styles.subTabText,
+                      { color: overviewSubTab === 'recent' ? theme.colors.primary : theme.colors.textSecondary }
+                    ]}
+                  >
+                    RECENT EXERCISES
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.subTabBtn,
+                    overviewSubTab === 'muscles' && [styles.subTabBtnActive, { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.primary }]
+                  ]}
+                  onPress={() => setOverviewSubTab('muscles')}
+                >
+                  <Text
+                    style={[
+                      styles.subTabText,
+                      { color: overviewSubTab === 'muscles' ? theme.colors.primary : theme.colors.textSecondary }
+                    ]}
+                  >
+                    MUSCLES
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* ============================================================ */}
+              {/* SUB-TAB 1: RECENT EXERCISES / WORKOUTS HISTORY */}
+              {/* ============================================================ */}
+              {overviewSubTab === 'recent' && (
+                <>
+                  <View style={styles.historySectionHeaderRow}>
+                    <Text style={styles.sectionLabel}>RECENT WORKOUTS</Text>
+                    <TouchableOpacity onPress={() => navigation.navigate('WorkoutHistory')}>
+                      <Text style={styles.seeAllLink}>See All ({workouts.length})</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {workouts.slice(0, 5).map(w => (
+                    <TouchableOpacity key={w.id} style={styles.workoutPremiumCard} activeOpacity={0.8} onPress={() => navigation.navigate('WorkoutDetail', { workoutId: w.id, userId: profile?.id })}>
+                      <View style={styles.workoutCardTop}>
+                        <View style={styles.workoutTitleCol}>
+                          <Text style={styles.workoutName}>{w.planName || 'Custom Workout'}</Text>
+                          {w.workoutType === 'duo' && w.duoPartnerName && (
+                            <View style={styles.duoBadge}>
+                              <Text style={styles.duoBadgeText}>🤝 Duo with {w.duoPartnerName}</Text>
+                            </View>
+                          )}
+                          <Text style={styles.workoutDate}>
+                            {new Date(w.createdAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          </Text>
+                        </View>
+                        {w.totalVolumeKg ? (
+                          <View style={styles.volBadge}>
+                            <Text style={styles.volBadgeVal}>
+                              {Math.round(convertWeightToDisplay(w.totalVolumeKg, system)).toLocaleString()} {getWeightUnit(system)}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <View style={styles.workoutCardDivider} />
+                      <View style={styles.workoutCardBottom}>
+                        <View style={styles.workoutStatCol}>
+                          <Clock size={13} color={colors.textMuted} />
+                          <Text style={styles.workoutStatVal}>{w.durationMinutes ? `${w.durationMinutes} min` : '—'}</Text>
+                        </View>
+                        <View style={styles.workoutStatCol}>
+                          <Award size={13} color={colors.milestone} />
+                          <Text style={styles.workoutStatVal}>{w.entries.length} Exercises</Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+
+                  {workouts.length === 0 && !loadingOverview && (
+                    <View style={styles.emptyBox}>
+                      <Dumbbell size={28} color={colors.textMuted} />
+                      <Text style={styles.emptyText}>No workout logs found. Start logging to build your profile history!</Text>
+                    </View>
+                  )}
+                </>
+              )}
+
+              {/* ============================================================ */}
+              {/* SUB-TAB 2: MUSCLES (WEEKLY MUSCLE CARDS + RECOVERY) */}
+              {/* ============================================================ */}
+              {overviewSubTab === 'muscles' && (
+                <View style={{ gap: spacing.sm }}>
+                  <View style={styles.historySectionHeaderRow}>
+                    <View>
+                      <Text style={styles.sectionLabel}>MUSCLES</Text>
+                      <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '600' }}>
+                        THIS WEEK · {currentWeekRangeText}
+                      </Text>
+                    </View>
+                    <View style={styles.recoverySummaryBadge}>
+                      <Activity size={12} color={theme.colors.primary} />
+                      <Text style={[styles.recoverySummaryText, { color: theme.colors.primary }]}>
+                        Live Recovery
+                      </Text>
+                    </View>
+                  </View>
+
+                  {weeklyMuscleAnalytics.map((m) => {
+                    const isExpanded = expandedMuscle === m.name;
+                    const recoveryColor =
+                      m.recoveryPercentage >= 80
+                        ? theme.colors.success || '#10b981'
+                        : m.recoveryPercentage >= 50
+                        ? theme.colors.warning || '#eab308'
+                        : theme.colors.danger || '#ef4444';
+
+                    const recoveryBg =
+                      m.recoveryPercentage >= 80
+                        ? 'rgba(16,185,129,0.12)'
+                        : m.recoveryPercentage >= 50
+                        ? 'rgba(234,179,8,0.12)'
+                        : 'rgba(239,68,68,0.12)';
+
+                    const recoveryBorder =
+                      m.recoveryPercentage >= 80
+                        ? 'rgba(16,185,129,0.28)'
+                        : m.recoveryPercentage >= 50
+                        ? 'rgba(234,179,8,0.28)'
+                        : 'rgba(239,68,68,0.28)';
+
+                    return (
+                      <TouchableOpacity
+                        key={m.name}
+                        style={[
+                          styles.muscleCard,
+                          {
+                            backgroundColor: theme.colors.surface,
+                            borderColor: isExpanded ? theme.colors.primary : theme.colors.border,
+                          }
+                        ]}
+                        activeOpacity={0.85}
+                        onPress={() => setExpandedMuscle(isExpanded ? null : m.name)}
+                      >
+                        {/* Collapsed Card Header */}
+                        <View style={styles.muscleCardHeader}>
+                          <View style={styles.muscleTitleCol}>
+                            <Text style={[styles.muscleCardName, { color: theme.colors.textPrimary }]}>
+                              {m.name.toUpperCase()}
+                            </Text>
+                            <Text style={[styles.muscleCardSub, { color: theme.colors.textSecondary }]}>
+                              {m.setsThisWeek > 0
+                                ? `${m.setsThisWeek} sets · ${Math.round(convertWeightToDisplay(m.volumeThisWeekKg, system)).toLocaleString()} ${getWeightUnit(system)}`
+                                : 'No activity this week'}
+                            </Text>
+                          </View>
+
+                          <View style={styles.muscleCardRight}>
+                            <View
+                              style={[
+                                styles.recoveryBadge,
+                                {
+                                  backgroundColor: recoveryBg,
+                                  borderColor: recoveryBorder,
+                                }
+                              ]}
+                            >
+                              <Text style={[styles.recoveryBadgeText, { color: recoveryColor }]}>
+                                {m.recoveryPercentage}%
+                              </Text>
+                            </View>
+                            {isExpanded ? (
+                              <ChevronUp size={16} color={theme.colors.textSecondary} />
+                            ) : (
+                              <ChevronDown size={16} color={theme.colors.textSecondary} />
+                            )}
+                          </View>
+                        </View>
+
+                        {/* Expanded Card Body */}
+                        {isExpanded && (
+                          <View style={styles.muscleExpandedBody}>
+                            <View style={[styles.muscleDivider, { backgroundColor: theme.colors.border }]} />
+
+                            {/* ESTIMATED RECOVERY STATUS */}
+                            <View style={styles.recoveryDetailRow}>
+                              <Text style={[styles.muscleSectionSubHeader, { color: theme.colors.textSecondary }]}>
+                                ESTIMATED RECOVERY
+                              </Text>
+                              <Text style={{ color: recoveryColor, fontSize: 11, fontWeight: '700' }}>
+                                {m.recoveryPercentage}% · {m.recoveryPercentage >= 80 ? 'Ready / Recovered' : m.recoveryPercentage >= 50 ? 'Recovering' : 'Fatigued'}
+                              </Text>
+                            </View>
+                            <View style={[styles.recoveryProgressBarBg, { backgroundColor: theme.colors.surfaceElevated }]}>
+                              <View
+                                style={[
+                                  styles.recoveryProgressBarFill,
+                                  { width: `${m.recoveryPercentage}%`, backgroundColor: recoveryColor }
+                                ]}
+                              />
+                            </View>
+
+                            <View style={[styles.muscleDivider, { backgroundColor: theme.colors.border }]} />
+
+                            {/* RECENT EXERCISES */}
+                            <View style={{ gap: 6 }}>
+                              <Text style={[styles.muscleSectionSubHeader, { color: theme.colors.textSecondary }]}>
+                                RECENT EXERCISES
+                              </Text>
+                              {m.recentExercises.length > 0 ? (
+                                m.recentExercises.map((re, idx) => (
+                                  <View key={idx} style={styles.recentExRow}>
+                                    <Text style={[styles.recentExName, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+                                      {re.name}
+                                    </Text>
+                                    <Text style={[styles.recentExSet, { color: theme.colors.primary }]}>
+                                      {re.bestSet}
+                                    </Text>
+                                  </View>
+                                ))
+                              ) : (
+                                <Text style={[styles.recentExEmpty, { color: theme.colors.textMuted }]}>
+                                  No recent exercises logged for {m.name}.
+                                </Text>
+                              )}
+                            </View>
+
+                            <View style={[styles.muscleDivider, { backgroundColor: theme.colors.border }]} />
+
+                            {/* VOLUME TREND */}
+                            <View style={{ gap: 6 }}>
+                              <Text style={[styles.muscleSectionSubHeader, { color: theme.colors.textSecondary }]}>
+                                VOLUME TREND
+                              </Text>
+                              <MuscleVolumeBarChart
+                                trend={m.weeklyVolumeTrend}
+                                unit={getWeightUnit(system)}
+                                primaryColor={theme.colors.primary}
+                                surfaceElevatedColor={theme.colors.surfaceElevated}
+                                textColor={theme.colors.textPrimary}
+                                textMutedColor={theme.colors.textSecondary}
+                              />
+                            </View>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </>
+          )
+        )}
+
+        {/* ================================================================ */}
+        {/* TAB 2: EXERCISES & 1RM PR RECORDS */}
+        {/* ================================================================ */}
+        {activeTab === 'exercises' && (
+          <>
+            <View style={styles.searchRow}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search exercise PRs (e.g. Bench, Squat)..."
+                placeholderTextColor={colors.textMuted}
+                value={exerciseSearch}
+                onChangeText={setExerciseSearch}
+              />
+            </View>
+
+            {loadingEx ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
+            ) : Object.keys(prs).length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Award size={32} color={colors.textMuted} />
+                <Text style={styles.emptyText}>No personal records logged yet. Complete sets in workouts to track your PR progression!</Text>
+              </View>
+            ) : (
+              <View style={{ gap: spacing.sm }}>
+                {Object.values(prs)
+                  .filter(p => {
+                    const ex = prExercises[p.exerciseId];
+                    if (!exerciseSearch.trim()) return true;
+                    return (ex?.name || '').toLowerCase().includes(exerciseSearch.toLowerCase());
+                  })
+                  .map(p => {
+                    const ex = prExercises[p.exerciseId];
+                    const display1RM = convertWeightToDisplay(p.estimated1RM, system);
+                    const displayBest = convertWeightToDisplay(p.bestWeightKg, system);
+                    const unit = getWeightUnit(system);
+
+                    return (
+                      <View key={p.exerciseId} style={styles.exercisePremiumCard}>
+                        <View style={styles.exCardTop}>
+                          <View style={styles.exThumbnail}>
+                            <Text style={styles.exThumbText}>
+                              {(ex?.name || 'Ex').slice(0, 2).toUpperCase()}
+                            </Text>
+                          </View>
+                          <View style={styles.exDetails}>
+                            <Text style={styles.exTitle}>{ex?.name || 'Exercise Record'}</Text>
+                            <Text style={styles.exSubtitle}>
+                              {ex?.muscleGroup || 'Strength'} • Achieved {new Date(p.achievedOn).toLocaleDateString()}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.exPrRow}>
+                          <View style={styles.prBox}>
+                            <Text style={styles.prLabel}>ESTIMATED 1RM</Text>
+                            <Text style={styles.prValue}>{display1RM} {unit}</Text>
+                          </View>
+                          <View style={styles.prBox}>
+                            <Text style={styles.prLabel}>BEST WEIGHT × REPS</Text>
+                            <Text style={styles.prValue}>{displayBest} {unit} × {p.bestReps}</Text>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+              </View>
+            )}
+          </>
+        )}
+
+        {/* ================================================================ */}
+        {/* TAB 3: MEASURES */}
+        {/* ================================================================ */}
+        {activeTab === 'measures' && (
+          errorMeasures ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>Failed to load body measurements.</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={loadMeasuresData}>
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <View style={styles.measuresActionRow}>
+                <TouchableOpacity style={styles.logCTA} onPress={() => setShowLogModal(true)}>
+                  <Scale size={16} color={colors.primaryDark} />
+                  <Text style={styles.logCTAText}>+ Log Today's Measures</Text>
+                </TouchableOpacity>
+              </View>
+
+              {activeGoal ? (
+                <View style={styles.goalPremiumCard}>
+                  <View style={styles.goalTopRow}>
+                    <View>
+                      <Text style={styles.goalLabel}>ACTIVE GOAL</Text>
+                      <Text style={styles.goalTitle}>
+                        {activeGoal.type === 'lose_weight' ? 'Weight Loss Target' : activeGoal.type === 'gain_weight' ? 'Weight Gain Target' : 'Body Weight Target'}
+                      </Text>
+                    </View>
+                    <Target size={18} color={colors.primary} />
+                  </View>
+                  <View style={styles.goalBodyRow}>
+                    <Text style={styles.goalDetailVal}>
+                      Target: {convertWeightToDisplay(activeGoal.targetValue, system)} {getWeightUnit(system)}
+                    </Text>
+                    <Text style={styles.goalCurrentVal}>
+                      Start: {convertWeightToDisplay(activeGoal.startValue, system)} {getWeightUnit(system)}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.createGoalRowBtn} onPress={() => navigation.navigate('GoalSettings')}>
+                  <Target size={16} color={colors.primary} />
+                  <Text style={styles.createGoalRowText}>Set a target weight goal</Text>
+                  <ChevronRight size={14} color={colors.primary} />
+                </TouchableOpacity>
+              )}
+
+              {/* Expandable Measurement Cards List */}
+              <View style={{ gap: spacing.sm, marginTop: spacing.xs }}>
+                {MEASUREMENT_TILES.map((t) => {
+                  const hist = historyByType[t.type] || [];
+                  const goalForType = goalsByType[t.type] || (t.type === 'weight' ? activeGoal : null);
+                  const isExpanded = expandedMeasurement === t.type;
+
+                  return (
+                    <ExpandableMeasurementCard
+                      key={t.type}
+                      tile={t}
+                      entries={hist}
+                      goal={goalForType}
+                      system={system}
+                      isExpanded={isExpanded}
+                      onToggle={() => {
+                        setExpandedMeasurement((prev) => (prev === t.type ? null : t.type));
+                      }}
+                      onSetGoal={() => navigation.navigate('GoalSettings')}
+                    />
+                  );
+                })}
+              </View>
+            </>
+          )
+        )}
+
+        {/* ================================================================ */}
+        {/* TAB 4: PHOTOS */}
+        {/* ================================================================ */}
+        {activeTab === 'photos' && (
+          <View style={styles.photosEmptyContainer}>
+            <View style={styles.photosIconCircle}>
+              <Camera size={28} color={colors.textMuted} />
+            </View>
+            <Text style={styles.photosTitle}>Visual Progress Gallery</Text>
+            <Text style={styles.photosDesc}>
+              Upload and compare front, side, and back physique photos to track visual muscle growth and transformation.
+            </Text>
+            <TouchableOpacity style={styles.photosCta} onPress={() => Alert.alert('Coming Soon', 'Photo upload gallery is in development.')}>
+              <Text style={styles.photosCtaText}>Add Transformation Photo</Text>
             </TouchableOpacity>
           </View>
-          <ScrollView contentContainerStyle={{ padding: spacing.md, gap: spacing.md, paddingBottom: 80 }} keyboardShouldPersistTaps="handled">
-            {LOG_FIELDS.map(field => (
-              <View key={field.type} style={styles.logFieldRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.logFieldLabel}>{field.label} ({field.unit})</Text>
+        )}
+      </ScrollView>
+
+      {/* Log Measurements Modal */}
+      <Modal visible={showLogModal} animationType="slide" transparent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalBackdrop}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Log Body Measures</Text>
+              <TouchableOpacity onPress={() => setShowLogModal(false)}>
+                <Text style={{ color: colors.textMuted, fontSize: 16 }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={{ padding: spacing.md, gap: spacing.sm }}>
+              {LOG_FIELDS.map(f => (
+                <View key={f.type} style={styles.logFieldRow}>
+                  <Text style={styles.logFieldLabel}>{f.label} ({f.type === 'weight' ? getWeightUnit(system) : f.type === 'body_fat' ? '%' : getMeasurementUnit(system)})</Text>
+                  <TextInput
+                    style={styles.logFieldInput}
+                    placeholder={f.placeholder}
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="decimal-pad"
+                    value={logValues[f.type] || ''}
+                    onChangeText={txt => setLogValues(prev => ({ ...prev, [f.type]: txt }))}
+                  />
                 </View>
-                <TextInput
-                  style={styles.logFieldInput}
-                  keyboardType="decimal-pad"
-                  placeholder={field.placeholder}
-                  placeholderTextColor={colors.textMuted}
-                  value={logValues[field.type] || ''}
-                  onChangeText={val => setLogValues(prev => ({ ...prev, [field.type]: val }))}
-                />
-              </View>
-            ))}
-          </ScrollView>
-          <View style={styles.modalFooter}>
-            <TouchableOpacity style={[styles.saveBtn, logSaving && { opacity: 0.5 }]} onPress={handleLogMeasurements} disabled={logSaving}>
-              {logSaving ? <ActivityIndicator size="small" color={colors.primaryDark} /> : <Text style={styles.saveBtnText}>Save Measurements</Text>}
-            </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <View style={styles.modalFooter}>
+              <TouchableOpacity style={styles.saveBtn} onPress={handleLogMeasurements} disabled={logSaving}>
+                {logSaving ? (
+                  <ActivityIndicator color={colors.primaryDark} />
+                ) : (
+                  <Text style={styles.saveBtnText}>Save Measurements</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -650,21 +1212,16 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.lg, gap: spacing.md },
-
-  profileHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.md },
-  profileAvatar: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
-  profileAvatarText: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  profileInfo: { flex: 1, gap: 2 },
-  profileName: { color: colors.text, fontSize: 18, fontWeight: '800' },
-  profileUsername: { color: colors.primary, fontSize: 13, fontWeight: '600' },
-  profileGoal: { color: colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  headerUser: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
+  userInfo: { gap: 1 },
+  userName: { color: colors.text, fontSize: 16, fontWeight: '800' },
+  userSub: { color: colors.textMuted, fontSize: 12 },
   profileActions: { flexDirection: 'row', gap: spacing.sm },
   headerIconBtn: { padding: spacing.xs },
-
-  weightBanner: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
-  weightVal: { color: colors.primary, fontSize: 20, fontWeight: '800' },
-  weightLbl: { color: colors.textMuted, fontSize: 12, marginLeft: 6 },
 
   tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.xs },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 14, borderBottomWidth: 2, borderBottomColor: 'transparent' },
@@ -674,31 +1231,193 @@ const styles = StyleSheet.create({
 
   tabContent: { padding: spacing.md, gap: spacing.md },
 
-  sectionLabel: { color: colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, marginTop: spacing.sm, marginBottom: 4 },
+  sectionLabel: { color: colors.text, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
 
   statsRow: { flexDirection: 'row', gap: spacing.sm },
   statCard: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.md, alignItems: 'center', gap: 4 },
-  statNum: { color: colors.text, fontSize: 22, fontWeight: '900' },
+  statNum: { color: colors.text, fontSize: 20, fontWeight: '900' },
   statLbl: { color: colors.textMuted, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'center' },
 
-  navRow: { flexDirection: 'row', gap: spacing.sm },
-  navBtn: { flex: 1, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, padding: spacing.sm, alignItems: 'center', gap: 4 },
-  navBtnText: { color: colors.text, fontSize: 10, fontWeight: '600' },
-
   // Muscle Activity Visual Redesign Card
-  muscleContainerCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: spacing.md },
-  muscleSectionHeader: { color: colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 1.5, textTransform: 'uppercase' },
+  muscleContainerCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: spacing.sm },
+  
+  monthSelectorRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: spacing.xs },
+  monthNavBtn: { padding: spacing.xs, borderRadius: radius.sm },
+  monthTitleCol: { alignItems: 'center', gap: 1 },
+  monthTitleText: { fontSize: 13, fontWeight: '900', letterSpacing: 1 },
+  monthDateRangeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+
   bodyVizRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, paddingVertical: spacing.xs },
   bodyVizItem: { alignItems: 'center', gap: spacing.xs },
   bodyVizLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
 
+  legendContainer: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+    alignItems: 'center',
+  },
+  heatScaleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  heatScaleBar: {
+    flexDirection: 'row',
+    height: 6,
+    width: 120,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  heatScaleSegment: {
+    flex: 1,
+    height: '100%',
+  },
+  heatScaleLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
   legendRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { color: colors.text, fontSize: 11, fontWeight: '600' },
 
+  // Sub-Tab Switcher: [ RECENT EXERCISES ] [ MUSCLES ]
+  subTabRow: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: 3,
+    marginTop: spacing.xs,
+  },
+  subTabBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  subTabBtnActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  subTabText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+
+  // Weekly Muscles Cards Styling
+  recoverySummaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,107,0,0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  recoverySummaryText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+
+  muscleCard: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  muscleCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  muscleTitleCol: {
+    flex: 1,
+    gap: 2,
+  },
+  muscleCardName: {
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  muscleCardSub: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  muscleCardRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  recoveryBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  recoveryBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  muscleExpandedBody: {
+    gap: spacing.sm,
+    marginTop: 2,
+  },
+  muscleDivider: {
+    height: 1,
+    marginVertical: 2,
+  },
+  muscleSectionSubHeader: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  recoveryDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  recoveryProgressBarBg: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  recoveryProgressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  recentExRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  recentExName: {
+    fontSize: 12,
+    fontWeight: '700',
+    flex: 1,
+  },
+  recentExSet: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  recentExEmpty: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    paddingVertical: 2,
+  },
+
   // Workout History Premium Cards
-  historySectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: spacing.sm },
+  historySectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.xs },
   seeAllLink: { color: colors.primary, fontSize: 12, fontWeight: '700' },
   workoutPremiumCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: 10 },
   workoutCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -714,8 +1433,6 @@ const styles = StyleSheet.create({
 
   emptyBox: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xl },
   emptyText: { color: colors.textMuted, textAlign: 'center', fontSize: 13, lineHeight: 18 },
-  ctaBtn: { borderWidth: 1, borderColor: colors.primary, borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: 8, marginTop: spacing.sm },
-  ctaBtnText: { color: colors.primary, fontWeight: '700', fontSize: 13 },
 
   searchRow: { flexDirection: 'row', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.sm },
   searchInput: { flex: 1, paddingVertical: 11, color: colors.text, fontSize: 15 },
@@ -732,9 +1449,6 @@ const styles = StyleSheet.create({
   prBox: { flex: 1, gap: 2 },
   prLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   prValue: { color: colors.text, fontSize: 13, fontWeight: '800' },
-  prTrendBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(72,187,149,0.12)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill },
-  trendPercent: { color: colors.primary, fontSize: 11, fontWeight: '800' },
-  noPrText: { color: colors.textMuted, fontSize: 12, fontStyle: 'italic' },
 
   // Measures Tab Redesign Layout
   measuresActionRow: { paddingBottom: spacing.xs },
@@ -751,8 +1465,6 @@ const styles = StyleSheet.create({
   goalBodyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   goalDetailVal: { color: colors.primary, fontSize: 18, fontWeight: '900' },
   goalCurrentVal: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
-  goalProgressBg: { height: 6, backgroundColor: colors.bg, borderRadius: 3, overflow: 'hidden' },
-  goalProgressFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 3 },
 
   measuresGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, justifyContent: 'space-between' },
   measureTileCard: { width: '48%', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: spacing.sm, marginBottom: spacing.xs },
@@ -774,6 +1486,8 @@ const styles = StyleSheet.create({
   photosCtaText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
 
   // Modal styling
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: colors.bg, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, maxHeight: '85%', overflow: 'hidden' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.bg },
   modalTitle: { color: colors.text, fontSize: 18, fontWeight: '700' },
   logFieldRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: 10 },
@@ -785,18 +1499,16 @@ const styles = StyleSheet.create({
   duoBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surfaceAlt,
-    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(59,130,246,0.12)',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: radius.sm,
+    borderRadius: radius.pill,
+    alignSelf: 'flex-start',
     marginTop: 2,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
-  duoBadgeText: {
-    color: colors.primary,
-    fontSize: 10,
-    fontWeight: '800',
-  },
+  duoBadgeText: { color: '#60a5fa', fontSize: 11, fontWeight: '700' },
+  errorContainer: { padding: spacing.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, marginVertical: spacing.md, gap: spacing.md, width: '100%' },
+  errorText: { color: '#ef4444', fontSize: 14, fontWeight: '600', textAlign: 'center' },
+  retryBtn: { backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: 10, borderRadius: radius.pill },
+  retryBtnText: { color: colors.primaryDark, fontWeight: '700', fontSize: 14 },
 });

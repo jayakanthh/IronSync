@@ -69,6 +69,16 @@ import {
 import { useCurrentUser } from '../../context/CurrentUser';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
 
+import {
+  getUnitSystem,
+  convertWeightToDisplay,
+  convertWeightToCanonical,
+  convertKmToDisplay,
+  convertKmToCanonical,
+  getWeightUnit,
+  getDistanceUnit
+} from '../../utils/formatting/units';
+
 interface LoggedSet {
   setNumber: number;
   targetReps: string;
@@ -84,6 +94,9 @@ interface LoggedSet {
   durationSeconds?: number;
   distanceKm?: number;
   caloriesBurned?: number;
+
+  weightInputStr?: string;
+  distanceInputStr?: string;
 }
 
 interface LoggedExercise {
@@ -489,11 +502,15 @@ export default function LogWorkoutScreen({
     setItems(updated);
   };
 
-  const updateSetWeight = (exIndex: number, setIndex: number, newWeight: number) => {
+  const system = getUnitSystem(profile);
+
+  const updateSetWeight = (exIndex: number, setIndex: number, textVal: string) => {
     const updated = [...items];
     const targetSet = updated[exIndex].sets[setIndex];
     if (targetSet) {
-      targetSet.kg = Math.max(0, newWeight);
+      targetSet.weightInputStr = textVal;
+      const num = parseFloat(textVal) || 0;
+      targetSet.kg = Math.max(0, convertWeightToCanonical(num, system));
     }
     setItems(updated);
   };
@@ -526,11 +543,13 @@ export default function LogWorkoutScreen({
     setItems(updated);
   };
 
-  const updateSetDistance = (exIndex: number, setIndex: number, km: number) => {
+  const updateSetDistance = (exIndex: number, setIndex: number, textVal: string) => {
     const updated = [...items];
     const targetSet = updated[exIndex].sets[setIndex];
     if (targetSet) {
-      targetSet.distanceKm = Math.max(0, km);
+      targetSet.distanceInputStr = textVal;
+      const num = parseFloat(textVal) || 0;
+      targetSet.distanceKm = Math.max(0, convertKmToCanonical(num, system));
     }
     setItems(updated);
   };
@@ -1156,14 +1175,18 @@ export default function LogWorkoutScreen({
                     <Text style={[styles.colHeader, { width: 30, textAlign: 'center' }]}>SET</Text>
                     {isCardio ? (
                       <>
-                        <Text style={[styles.colHeader, { flex: 1, textAlign: 'center' }]}>KM</Text>
+                        <Text style={[styles.colHeader, { flex: 1, textAlign: 'center' }]}>
+                          {getDistanceUnit(system).toUpperCase()}
+                        </Text>
                         <Text style={[styles.colHeader, { flex: 1, textAlign: 'center' }]}>MIN:SEC</Text>
                       </>
                     ) : isRepsOnly ? (
                       <Text style={[styles.colHeader, { flex: 2, textAlign: 'center' }]}>REPS</Text>
                     ) : (
                       <>
-                        <Text style={[styles.colHeader, { flex: 1, textAlign: 'center' }]}>KG</Text>
+                        <Text style={[styles.colHeader, { flex: 1, textAlign: 'center' }]}>
+                          {getWeightUnit(system).toUpperCase()}
+                        </Text>
                         <Text style={[styles.colHeader, { flex: 1, textAlign: 'center' }]}>REPS</Text>
                       </>
                     )}
@@ -1197,13 +1220,13 @@ export default function LogWorkoutScreen({
                         {/* Adaptive input fields */}
                         {isCardio ? (
                           <>
-                            {/* Distance in Km */}
+                            {/* Distance in Km/Mi */}
                             <View style={styles.inputContainer}>
                               <TextInput
                                 style={styles.cellInput}
                                 keyboardType="numeric"
-                                value={(set.distanceKm || 0).toString()}
-                                onChangeText={(val) => updateSetDistance(exIndex, setIdx, parseFloat(val) || 0)}
+                                value={set.distanceInputStr !== undefined ? set.distanceInputStr : (set.distanceKm ? convertKmToDisplay(set.distanceKm, system).toString() : '')}
+                                onChangeText={(val) => updateSetDistance(exIndex, setIdx, val)}
                                 editable={!set.completed}
                                 placeholder="0"
                                 placeholderTextColor={colors.textMuted}
@@ -1249,8 +1272,8 @@ export default function LogWorkoutScreen({
                               <TextInput
                                 style={styles.cellInput}
                                 keyboardType="numeric"
-                                value={set.kg.toString()}
-                                onChangeText={(val) => updateSetWeight(exIndex, setIdx, parseFloat(val) || 0)}
+                                value={set.weightInputStr !== undefined ? set.weightInputStr : (set.kg ? convertWeightToDisplay(set.kg, system).toString() : '')}
+                                onChangeText={(val) => updateSetWeight(exIndex, setIdx, val)}
                                 editable={!set.completed}
                               />
                             </View>

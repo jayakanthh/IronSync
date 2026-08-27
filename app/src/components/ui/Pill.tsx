@@ -1,5 +1,6 @@
-import { StyleSheet, Text, TouchableOpacity, TouchableOpacityProps } from 'react-native';
-import { colors, radius, spacing } from '../../theme/colors';
+import React from 'react';
+import { Text, TouchableOpacity, TouchableOpacityProps, StyleSheet } from 'react-native';
+import { useTheme } from '../../theme/colors';
 
 interface PillProps extends TouchableOpacityProps {
   label: string;
@@ -8,24 +9,27 @@ interface PillProps extends TouchableOpacityProps {
 
 /** Filter chip / category pill — used in Workouts, Exercise Library, Home category row. */
 export default function Pill({ label, active, style, ...props }: PillProps) {
+  const { theme } = useTheme();
+
+  const pillStyle = {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: theme.shape.pill,
+    backgroundColor: active ? theme.colors.primary : theme.colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: active ? theme.colors.primary : theme.colors.border,
+    marginRight: 4,
+  };
+
+  const textStyle = {
+    color: active ? theme.colors.primaryForeground : theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  };
+
   return (
-    <TouchableOpacity style={[styles.pill, active && styles.pillActive, style]} activeOpacity={0.85} {...props}>
-      <Text style={[styles.text, active && styles.textActive]}>{label}</Text>
+    <TouchableOpacity style={[pillStyle, style]} activeOpacity={0.85} {...props}>
+      <Text style={textStyle}>{label}</Text>
     </TouchableOpacity>
   );
 }
-
-const styles = StyleSheet.create({
-  pill: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginRight: spacing.xs,
-  },
-  pillActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  text: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
-  textActive: { color: colors.primaryDark },
-});

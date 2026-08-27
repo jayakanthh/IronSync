@@ -25,6 +25,7 @@ export interface User {
   groupIds: string[];
   communityIds?: string[]; // communities (gym, college, etc.) — distinct from crews
   savedPlanIds?: string[]; // public plans the user has bookmarked (Workouts > Saved tab)
+  unitSystem?: 'metric' | 'imperial';
   
   username?: string;
   normalizedUsername?: string;
