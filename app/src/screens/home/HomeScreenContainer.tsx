@@ -176,7 +176,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
         unreadNotifsCount={unreadNotifsCount}
         onAvatarPress={() => navigation.navigate('Profile')}
         onNotificationPress={() => navigation.navigate('Notifications')}
-        onOpenNutrition={() => navigation.navigate('Nutrition')}
+        onOpenStreak={() => navigation.navigate('Streak')}
         onOpenStrengthPR={() => navigation.navigate('StrengthPR')}
       />
       <HomeScreen

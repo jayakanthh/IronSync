@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { Bell, Utensils, Award } from 'lucide-react-native';
+import { Bell, Flame, Award } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/colors';
 import { Typography } from '../ui/Typography';
@@ -11,7 +11,7 @@ interface TopHeaderProps {
   onAvatarPress: () => void;
   onNotificationPress: () => void;
   unreadNotifsCount?: number;
-  onOpenNutrition?: () => void;
+  onOpenStreak?: () => void;
   onOpenStrengthPR?: () => void;
 }
 
@@ -20,7 +20,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onAvatarPress,
   onNotificationPress,
   unreadNotifsCount = 2,
-  onOpenNutrition,
+  onOpenStreak,
   onOpenStrengthPR,
 }) => {
   const insets = useSafeAreaInsets();
@@ -57,9 +57,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       </View>
 
       <View style={styles.rightSection}>
-        {onOpenNutrition && (
-          <TouchableOpacity onPress={onOpenNutrition} style={styles.iconBtn}>
-            <Utensils size={20} color={theme.colors.warning} />
+        {onOpenStreak && (
+          <TouchableOpacity onPress={onOpenStreak} style={styles.iconBtn}>
+            <Flame size={20} color={theme.colors.warning} />
           </TouchableOpacity>
         )}
 

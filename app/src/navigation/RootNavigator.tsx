@@ -18,6 +18,7 @@ import GroupWorkoutLobbyScreen from '../screens/duo/GroupWorkoutLobbyScreen';
 import GroupWorkoutScreen from '../screens/duo/GroupWorkoutScreen';
 import NotificationsModal from '../screens/settings/NotificationsModal';
 import StrengthPRScreen from '../screens/measurements/StrengthPRScreen';
+import StreakScreen from '../screens/streak/StreakScreen';
 import UserProfileScreen from '../screens/community/UserProfileScreen';
 import WorkoutDetailScreen from '../screens/workouts/WorkoutDetailScreen';
 import ExerciseDetailScreen from '../screens/workouts/ExerciseDetailScreen';
@@ -182,6 +183,7 @@ export default function RootNavigator() {
         <RootStack.Screen name="Progress" component={ProgressAnalyticsScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="Notifications" component={NotificationsModal} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="StrengthPR" component={StrengthPRScreen} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="Streak" component={StreakScreen} options={{ presentation: 'modal' }} />
         <RootStack.Screen name="UserProfile" component={UserProfileScreen} />
         <RootStack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} />
         <RootStack.Screen name="ExerciseDetail" component={ExerciseDetailScreen} />
