@@ -348,6 +348,18 @@ export default function LogWorkoutScreen({
   }, [profile, items, route?.params?.sourceLabel]);
 
   // Hardware Back Button listener
+  // Robust dismissal: if this logger was navigated to directly (e.g. from Home
+  // via the tab), there may be no back entry, so goBack() silently no-ops and
+  // the screen gets "stuck". Fall back to the Workouts home in that case.
+  const dismiss = useCallback(() => {
+    const nav = navigation as any;
+    if (typeof nav.canGoBack === 'function' && !nav.canGoBack()) {
+      nav.navigate('WorkoutsHome');
+    } else {
+      nav.goBack();
+    }
+  }, [navigation]);
+
   const handleDiscardWorkout = useCallback(async () => {
     setIsTimerRunning(false);
     setRestSeconds(0);
@@ -366,8 +378,8 @@ export default function LogWorkoutScreen({
     }
 
     setItems([]);
-    navigation.goBack();
-  }, [profile, navigation]);
+    dismiss();
+  }, [profile, dismiss]);
 
   const handleBackPress = useCallback(() => {
     Alert.alert(
@@ -759,7 +771,7 @@ export default function LogWorkoutScreen({
       await shareWorkoutToCommunity(selectedCommunityId, payload);
       setPostingState('success');
       Alert.alert('Success', 'Workout shared to community feed! 🏋️‍♂️', [
-        { text: 'Awesome', onPress: () => navigation.goBack() }
+        { text: 'Awesome', onPress: () => dismiss() }
       ]);
     } catch (e: any) {
       setPostingState('error');
@@ -767,7 +779,7 @@ export default function LogWorkoutScreen({
         'Posting Failed',
         `${e.message || 'Could not share to community.'}\n\nWould you like to retry or skip?`,
         [
-          { text: 'Skip', style: 'cancel', onPress: () => navigation.goBack() },
+          { text: 'Skip', style: 'cancel', onPress: () => dismiss() },
           { text: 'Retry', onPress: () => handlePublishPost() },
         ]
       );
@@ -862,7 +874,7 @@ export default function LogWorkoutScreen({
                 variant="outline"
                 label="Done"
                 style={{ flex: 1 }}
-                onPress={() => navigation.goBack()}
+                onPress={() => dismiss()}
               />
             </View>
           </ScrollView>
