@@ -87,15 +87,16 @@ export const Button: React.FC<ButtonProps> = ({
       ) : (
         <View style={styles.content}>
           {leftIcon && <View style={styles.leftIcon}>{leftIcon}</View>}
-          {label ? (
+          {label || typeof children === 'string' || typeof children === 'number' ? (
             <Typography
               variant="bodyBold"
               color={getTextColor()}
               style={{ textTransform: variant === 'primary' ? 'uppercase' : 'none', letterSpacing: variant === 'primary' ? 1 : 0 }}
             >
-              {label}
+              {label ?? children}
             </Typography>
           ) : (
+            // Non-text children (icons, custom nodes) render as-is.
             children
           )}
           {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
