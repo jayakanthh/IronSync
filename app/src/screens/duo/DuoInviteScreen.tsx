@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -35,6 +35,17 @@ export default function DuoInviteScreen() {
   const [createdInviteId, setCreatedInviteId] = useState<string | null>(null);
   const [sendingState, setSendingState] = useState<'idle' | 'sending' | 'sent' | 'cancelled'>('idle');
 
+  // Guard so we only navigate away once. The session listener and the manual
+  // cancel handler can both fire on cancellation — without this the second
+  // goBack() logs "GO_BACK was not handled" and re-shows the alert.
+  const leftRef = useRef(false);
+  const leaveScreen = (alertMsg?: string) => {
+    if (leftRef.current) return;
+    leftRef.current = true;
+    if (alertMsg) Alert.alert('Invitation Cancelled', alertMsg);
+    navigation.goBack();
+  };
+
   // If in 'send' mode, handle sending invite on mount
   useEffect(() => {
     if (mode === 'send' && partnerId && profile) {
@@ -53,8 +64,8 @@ export default function DuoInviteScreen() {
         navigation.replace('DuoLobby', { sessionId: createdSessionId });
       } else if (session.state === 'cancelled') {
         unsub();
-        Alert.alert('Invitation Cancelled', 'The invitation was cancelled.');
-        navigation.goBack();
+        // Only alerts if we haven't already left (e.g. the OTHER party cancelled).
+        leaveScreen('The invitation was cancelled.');
       }
     }, (err) => {
       console.error("Error listening to session:", err);
@@ -125,7 +136,7 @@ export default function DuoInviteScreen() {
         await updateDoc(doc(db, 'duoSessions', createdSessionId), { state: 'cancelled' });
       }
       setSendingState('cancelled');
-      navigation.goBack();
+      leaveScreen(); // no alert — the user initiated this
     } catch (e: any) {
       console.error(e);
       Alert.alert('Error', 'Could not cancel invitation.');
