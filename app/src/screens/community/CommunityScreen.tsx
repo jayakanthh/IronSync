@@ -85,12 +85,12 @@ export default function CommunityScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* My Communities Section */}
         <View style={styles.sectionHeader}>
-          <Typography variant="h2">My Spaces ({communities.length})</Typography>
+          <Typography variant="h2">My Crews ({communities.length})</Typography>
         </View>
         {communities.length === 0 ? (
           <Card style={styles.emptyCard}>
             <Typography variant="body" color={colors.textMuted} style={{ textAlign: 'center' }}>
-              You haven't joined any Spaces yet. Tap the compass icon at the top to discover your gym or college, or the + to create one.
+              You haven't joined any crews yet. Tap the compass icon at the top to discover your gym or college, or the + to create one.
             </Typography>
           </Card>
         ) : (
@@ -125,15 +125,15 @@ export default function CommunityScreen() {
           ))
         )}
 
-        {/* My Crews (Streak/PR Groups) Section */}
+        {/* Streak leaderboard groups */}
         <View style={styles.sectionHeader}>
-          <Typography variant="h2">My Leaderboard Crews</Typography>
-          <Typography variant="caption" color={colors.textMuted}>Competitive leaderboard circles</Typography>
+          <Typography variant="h2">Streak Leaderboards</Typography>
+          <Typography variant="caption" color={colors.textMuted}>Compete on streaks with your crew</Typography>
         </View>
         {crews.length === 0 ? (
           <Card style={styles.emptyCard}>
             <Typography variant="body" color={colors.textMuted} style={{ textAlign: 'center' }}>
-              No crews joined yet. Start a streak leaderboard crew with your close friends!
+              No streak leaderboards yet. Start one with your close friends!
             </Typography>
           </Card>
         ) : (
@@ -176,7 +176,7 @@ export default function CommunityScreen() {
       {/* Header with tab-aware action icons (top-right, like the home header) */}
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
-          <Typography variant="h1" color={theme.colors.textPrimary}>Community Hub</Typography>
+          <Typography variant="h1" color={theme.colors.textPrimary}>Social</Typography>
           <Typography variant="caption" color={theme.colors.textSecondary}>Connect, share, and train together</Typography>
         </View>
         <View style={styles.headerActions}>

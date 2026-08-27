@@ -216,38 +216,37 @@ export default function FriendsPanel({ searchOpen = false }: { searchOpen?: bool
             recentWorkoutText: 'No recent workouts'
           };
           return (
-            <Card key={f.friendId} style={styles.friendCard}>
-              <View style={styles.friendHeader}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{(f.name || '?').slice(0, 2).toUpperCase()}</Text>
+            // Tap anywhere on the card (name included) to open their profile —
+            // removing a friend now lives on the profile screen.
+            <TouchableOpacity
+              key={f.friendId}
+              activeOpacity={0.85}
+              onPress={() => navigation.navigate('UserProfile', { userId: f.friendId })}
+            >
+              <Card style={styles.friendCard}>
+                <View style={styles.friendHeader}>
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>{(f.name || '?').slice(0, 2).toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.name}>{f.name}</Text>
+                    <Text style={styles.username}>{detail.username}</Text>
+                  </View>
+                  <View style={styles.statusBox}>
+                    <View style={styles.onlineIndicator} />
+                    <Text style={styles.statusText}>{detail.lastActiveText}</Text>
+                  </View>
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>{f.name}</Text>
-                  <Text style={styles.username}>{detail.username}</Text>
-                </View>
-                <View style={styles.statusBox}>
-                  <View style={styles.onlineIndicator} />
-                  <Text style={styles.statusText}>{detail.lastActiveText}</Text>
-                </View>
-              </View>
 
-              <View style={styles.workoutBox}>
-                <Text style={styles.workoutLabel}>Recent workout:</Text>
-                <Text style={styles.workoutText} numberOfLines={1}>
-                  {detail.recentWorkoutText}
-                </Text>
-              </View>
+                <View style={styles.workoutBox}>
+                  <Text style={styles.workoutLabel}>Recent workout:</Text>
+                  <Text style={styles.workoutText} numberOfLines={1}>
+                    {detail.recentWorkoutText}
+                  </Text>
+                </View>
 
-              <View style={styles.friendActions}>
                 <TouchableOpacity
-                  style={styles.actionBtnOutline}
-                  onPress={() => navigation.navigate('UserProfile', { userId: f.friendId })}
-                >
-                  <Text style={styles.actionTextMuted}>View Profile</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.actionBtnPrimary}
+                  style={styles.duoBtn}
                   onPress={() => navigation.navigate('DuoStack', {
                     screen: 'DuoInvite',
                     params: { partnerId: f.friendId, partnerName: f.name, mode: 'send' }
@@ -255,12 +254,8 @@ export default function FriendsPanel({ searchOpen = false }: { searchOpen?: bool
                 >
                   <Text style={styles.actionTextPrimary}>DUO</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity style={styles.removeBtn} onPress={() => onRemove(f.friendId)}>
-                  <Text style={styles.removeText}>Remove</Text>
-                </TouchableOpacity>
-              </View>
-            </Card>
+              </Card>
+            </TouchableOpacity>
           );
         })
       )}
@@ -416,6 +411,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: radius.md,
     paddingVertical: 8,
+    alignItems: 'center',
+  },
+  duoBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 11,
     alignItems: 'center',
   },
   actionTextPrimary: {
