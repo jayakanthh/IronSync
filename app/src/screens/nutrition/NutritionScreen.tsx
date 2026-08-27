@@ -476,51 +476,6 @@ export default function NutritionScreen() {
             </View>
           </Card>
 
-          {/* Quick Add with AI */}
-          <Card style={styles.aiCard}>
-            <View style={styles.aiCardHeader}>
-              <View style={styles.aiBotBox}>
-                <Bot size={16} color="#06b6d4" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Typography variant="bodyBold">Quick Add with AI</Typography>
-                <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>
-                  Log multiple foods by typing naturally
-                </Typography>
-              </View>
-            </View>
-
-            <View style={styles.aiInputRow}>
-              <TextInput
-                style={styles.aiInput}
-                placeholder="e.g. 300g sweet potato, 150g chicken and 2 eggs"
-                placeholderTextColor={colors.textMuted}
-                value={aiPrompt}
-                onChangeText={setAiPrompt}
-              />
-              <TouchableOpacity
-                style={[styles.aiLogBtn, (!aiPrompt.trim() || isAiProcessing) && { opacity: 0.5 }]}
-                onPress={handleAILog}
-                disabled={!aiPrompt.trim() || isAiProcessing}
-              >
-                {isAiProcessing ? (
-                  <ActivityIndicator size="small" color={colors.bg} />
-                ) : (
-                  <Sparkles size={14} color={colors.bg} />
-                )}
-                <Typography variant="caption" color={colors.bg} style={{ fontSize: 9, marginTop: 2 }}>Log Meal</Typography>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.promptPillScroll}>
-              {PRESET_AI_PROMPTS.map((prompt, idx) => (
-                <TouchableOpacity key={idx} style={styles.promptPill} onPress={() => setAiPrompt(prompt)}>
-                  <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }} numberOfLines={1}>"{prompt.slice(0, 20)}..."</Typography>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </Card>
-
           {/* Food Diary Meal Sections */}
           {MEALS.map((meal) => {
             const mealItems = dayEntries.filter((e) => e.meal === meal.key);
