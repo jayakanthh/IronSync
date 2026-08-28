@@ -15,7 +15,7 @@ import {
 import Svg, { Circle } from 'react-native-svg';
 import {
   Utensils, Plus, Sparkles, Flame, Droplets, Trash2,
-  Bot, ChevronDown, ChevronUp, Check, Search, ArrowLeft, Heart, Edit2, Info
+  Bot, ChevronDown, ChevronUp, Check, Search, ArrowLeft, Heart, Edit2, Info, TrendingUp
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../theme/colors';
@@ -32,7 +32,7 @@ import {
 import { useCurrentUser } from '../../context/CurrentUser';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type ViewMode = 'diary' | 'search' | 'detail' | 'ai_review';
+type ViewMode = 'diary' | 'search' | 'detail' | 'ai_review' | 'setup' | 'progress';
 
 // ─── AI Preset Prompts ────────────────────────────────────────────────────────
 const PRESET_AI_PROMPTS = [
@@ -116,6 +116,12 @@ export default function NutritionScreen() {
   const [targets, setTargets] = useState<NutritionTargets | null>(null);
   const [dayEntries, setDayEntries] = useState<FoodLogEntry[]>([]);
 
+  // Goals setup (first-open questionnaire) + progress
+  const [setupVals, setSetupVals] = useState({ cals: '', protein: '', carbs: '', fat: '' });
+  const [savingTargets, setSavingTargets] = useState(false);
+  const [progressDays, setProgressDays] = useState<{ date: string; calories: number }[]>([]);
+  const [loadingProgress, setLoadingProgress] = useState(false);
+
   // UI State
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
@@ -182,10 +188,79 @@ export default function NutritionScreen() {
 
     const goal = (profile as any)?.goal as Goal | undefined;
     const weightKg = (profile as any)?.weightKg;
-    setTargets(t ?? suggest(goal, weightKg ?? 75));
+    const suggested = suggest(goal, weightKg ?? 75);
+    setTargets(t ?? suggested);
     setDayEntries(entries);
+
+    // First open (no saved goals) → prefill the setup form with suggestions
+    // and ask the user to confirm their calorie/macro targets.
+    if (!t) {
+      setSetupVals({
+        cals: String(suggested.dailyCalories),
+        protein: String(suggested.proteinG),
+        carbs: String(suggested.carbsG),
+        fat: String(suggested.fatG),
+      });
+      setViewMode('setup');
+    }
     setLoading(false);
   }, [profile]);
+
+  const handleSaveTargets = async () => {
+    const uid = currentUserId();
+    if (!uid) return;
+    const next: NutritionTargets = {
+      dailyCalories: Math.max(0, parseInt(setupVals.cals) || 0),
+      proteinG: Math.max(0, parseInt(setupVals.protein) || 0),
+      carbsG: Math.max(0, parseInt(setupVals.carbs) || 0),
+      fatG: Math.max(0, parseInt(setupVals.fat) || 0),
+    };
+    setSavingTargets(true);
+    try {
+      await setNutritionTargets(uid, next);
+      setTargets(next);
+      setViewMode('diary');
+    } catch {
+      Alert.alert('Error', 'Could not save your goals. Please try again.');
+    } finally {
+      setSavingTargets(false);
+    }
+  };
+
+  const openEditTargets = () => {
+    if (targets) {
+      setSetupVals({
+        cals: String(targets.dailyCalories),
+        protein: String(targets.proteinG),
+        carbs: String(targets.carbsG),
+        fat: String(targets.fatG),
+      });
+    }
+    setViewMode('setup');
+  };
+
+  const loadProgress = async () => {
+    const uid = currentUserId();
+    if (!uid) return;
+    setLoadingProgress(true);
+    setViewMode('progress');
+    try {
+      // Last 7 days of calorie intake.
+      const days: { date: string; calories: number }[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const entries = await getFoodLog(uid, iso);
+        days.push({ date: iso, calories: sumDay(entries).dailyCalories });
+      }
+      setProgressDays(days);
+    } catch {
+      setProgressDays([]);
+    } finally {
+      setLoadingProgress(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -409,6 +484,103 @@ export default function NutritionScreen() {
   // ──────────────────────────────────────────────────────────────────────────
   // 1. DIARY VIEW
   // ──────────────────────────────────────────────────────────────────────────
+  // ── Goals setup (first open / edit targets) ──────────────────────────────
+  if (viewMode === 'setup') {
+    const fields: { key: keyof typeof setupVals; label: string; unit: string }[] = [
+      { key: 'cals', label: 'Daily Calories', unit: 'kcal' },
+      { key: 'protein', label: 'Protein', unit: 'g' },
+      { key: 'carbs', label: 'Carbs', unit: 'g' },
+      { key: 'fat', label: 'Fat', unit: 'g' },
+    ];
+    return (
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Typography variant="h1" style={{ marginTop: 8 }}>Your daily goals</Typography>
+          <Typography variant="body" color={colors.textMuted} style={{ marginBottom: 8 }}>
+            Set your calorie and macro targets — we'll track your intake against these every day. We've suggested values from your profile; adjust as you like.
+          </Typography>
+
+          {fields.map((f) => (
+            <View key={f.key} style={styles.setupRow}>
+              <Text style={styles.setupLabel}>{f.label}</Text>
+              <View style={styles.setupInputWrap}>
+                <TextInput
+                  style={styles.setupInput}
+                  keyboardType="number-pad"
+                  value={setupVals[f.key]}
+                  onChangeText={(v) => setSetupVals((s) => ({ ...s, [f.key]: v.replace(/[^0-9]/g, '') }))}
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  maxLength={5}
+                />
+                <Text style={styles.setupUnit}>{f.unit}</Text>
+              </View>
+            </View>
+          ))}
+
+          <TouchableOpacity style={styles.setupSaveBtn} onPress={handleSaveTargets} disabled={savingTargets} activeOpacity={0.85}>
+            {savingTargets ? (
+              <ActivityIndicator color={colors.bg} />
+            ) : (
+              <Text style={styles.setupSaveText}>Save & Start Tracking</Text>
+            )}
+          </TouchableOpacity>
+          {targets && (
+            <TouchableOpacity style={{ alignItems: 'center', paddingVertical: 12 }} onPress={() => setViewMode('diary')}>
+              <Text style={{ color: colors.textMuted, fontWeight: '600' }}>Cancel</Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // ── Progress (last 7 days) ───────────────────────────────────────────────
+  if (viewMode === 'progress') {
+    const goalCals = targets?.dailyCalories || 0;
+    const maxCals = Math.max(goalCals, ...progressDays.map((d) => d.calories), 1);
+    return (
+      <View style={[styles.screen, { paddingTop: insets.top }]}>
+        <View style={styles.searchHeader}>
+          <TouchableOpacity onPress={() => setViewMode('diary')} style={styles.backBtn}>
+            <ArrowLeft size={20} color={colors.text} />
+          </TouchableOpacity>
+          <Typography variant="h2">Progress · Last 7 days</Typography>
+        </View>
+        <ScrollView contentContainerStyle={styles.content}>
+          {loadingProgress ? (
+            <ActivityIndicator color={colors.warning} style={{ marginTop: 40 }} />
+          ) : (
+            <>
+              <Typography variant="caption" color={colors.textMuted} style={{ marginBottom: 4 }}>
+                Daily calories vs your {goalCals} kcal goal
+              </Typography>
+              {progressDays.map((d) => {
+                const pct = Math.min(100, Math.round((d.calories / maxCals) * 100));
+                const over = goalCals > 0 && d.calories > goalCals;
+                const dow = new Date(d.date + 'T00:00:00').toLocaleDateString('default', { weekday: 'short' });
+                return (
+                  <View key={d.date} style={styles.progRow}>
+                    <Text style={styles.progDay}>{dow}</Text>
+                    <View style={styles.progBarTrack}>
+                      <View style={[styles.progBarFill, { width: `${pct}%`, backgroundColor: over ? colors.danger : colors.warning }]} />
+                    </View>
+                    <Text style={styles.progVal}>{d.calories}</Text>
+                  </View>
+                );
+              })}
+              <View style={styles.progLegend}>
+                <Text style={styles.progLegendText}>
+                  Avg: {progressDays.length ? Math.round(progressDays.reduce((a, d) => a + d.calories, 0) / progressDays.length) : 0} kcal/day
+                </Text>
+              </View>
+            </>
+          )}
+        </ScrollView>
+      </View>
+    );
+  }
+
   if (viewMode === 'diary') {
     return (
       <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -423,6 +595,14 @@ export default function NutritionScreen() {
                 Log Food, Calorie targets & macro analysis
               </Typography>
             </View>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.headerIconBtn} onPress={loadProgress}>
+              <TrendingUp size={20} color={colors.warning} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerIconBtn} onPress={openEditTargets}>
+              <Edit2 size={18} color={colors.textMuted} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -944,6 +1124,33 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: 'rgba(249, 115, 22, 0.3)',
     alignItems: 'center', justifyContent: 'center',
   },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  headerIconBtn: { padding: 8, borderRadius: 999 },
+
+  // Goals setup
+  setupRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  setupLabel: { color: colors.text, fontSize: 15, fontWeight: '600', flex: 1 },
+  setupInputWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    borderRadius: 12, paddingHorizontal: 12, minWidth: 130,
+  },
+  setupInput: { flex: 1, color: colors.text, fontSize: 16, fontWeight: '700', paddingVertical: 12, textAlign: 'right' },
+  setupUnit: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+  setupSaveBtn: {
+    backgroundColor: colors.warning, borderRadius: 999, paddingVertical: 16,
+    alignItems: 'center', marginTop: 12,
+  },
+  setupSaveText: { color: colors.bg, fontSize: 15, fontWeight: '800' },
+
+  // Progress
+  progRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  progDay: { color: colors.textMuted, fontSize: 12, fontWeight: '700', width: 36 },
+  progBarTrack: { flex: 1, height: 22, borderRadius: 6, backgroundColor: colors.surface, overflow: 'hidden' },
+  progBarFill: { height: '100%', borderRadius: 6 },
+  progVal: { color: colors.text, fontSize: 13, fontWeight: '700', width: 52, textAlign: 'right' },
+  progLegend: { marginTop: 16, alignItems: 'center' },
+  progLegendText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
 
   content: { padding: 16, gap: 16, paddingBottom: 100 },
 
