@@ -121,6 +121,7 @@ export default function GoalDetailsScreen() {
               proteinG: current?.proteinG ?? 150,
               carbsG: current?.carbsG ?? 200,
               fatG: current?.fatG ?? 60,
+              fiberG: current?.fiberG ?? Math.round((recommendation.calories! / 1000) * 14),
             });
             Alert.alert('Updated', 'Your nutrition target has been updated.');
           },

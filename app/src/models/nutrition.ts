@@ -4,6 +4,7 @@ export interface NutritionTargets {
   proteinG: number;
   carbsG: number;
   fatG: number;
+  fiberG: number;
 }
 
 export type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snacks';

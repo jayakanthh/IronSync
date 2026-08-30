@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, G } from 'react-native-svg';
 import {
   Utensils, Plus, Sparkles, Flame, Droplets, Trash2,
   Bot, ChevronDown, ChevronUp, Check, Search, ArrowLeft, Heart, Edit2, Info, TrendingUp
@@ -74,7 +74,8 @@ function suggest(goal: Goal | undefined, weightKg = 75): NutritionTargets {
   const proteinG = Math.round(weightKg * 2);
   const fatG = Math.round(weightKg * 1);
   const carbsG = Math.max(0, Math.round((dailyCalories - proteinG * 4 - fatG * 9) / 4));
-  return { dailyCalories, proteinG, carbsG, fatG };
+  const fiberG = Math.round((dailyCalories / 1000) * 14); // ~14g fibre per 1000 kcal
+  return { dailyCalories, proteinG, carbsG, fatG, fiberG };
 }
 
 const MEALS: { key: Meal; label: string; icon: string }[] = [
@@ -107,6 +108,66 @@ function CircularProgress({ percent, color, size = 96, strokeWidth = 9 }: {
   );
 }
 
+// Color per macro — shared by the rings and their legend.
+const MACRO_COLORS = {
+  calories: '#f97316', // orange
+  protein: '#06b6d4', // cyan
+  carbs: '#f59e0b', // amber
+  fat: '#f472b6', // pink
+  fiber: '#22c55e', // green
+};
+
+/** Apple-Fitness-style concentric rings: one per macro, each color-coded. */
+function MacroRings({ totals, targets, size = 172 }: {
+  totals: NutritionTargets; targets: NutritionTargets; size?: number;
+}) {
+  const rings = [
+    { consumed: totals.dailyCalories, target: targets.dailyCalories, color: MACRO_COLORS.calories },
+    { consumed: totals.proteinG, target: targets.proteinG, color: MACRO_COLORS.protein },
+    { consumed: totals.carbsG, target: targets.carbsG, color: MACRO_COLORS.carbs },
+    { consumed: totals.fatG, target: targets.fatG, color: MACRO_COLORS.fat },
+    { consumed: totals.fiberG, target: targets.fiberG, color: MACRO_COLORS.fiber },
+  ];
+  const strokeWidth = 12;
+  const gap = 3;
+  const c = size / 2;
+
+  return (
+    <Svg width={size} height={size}>
+      <G rotation={-90} origin={`${c}, ${c}`}>
+        {rings.map((r, i) => {
+          const radius = c - strokeWidth / 2 - i * (strokeWidth + gap);
+          const circ = 2 * Math.PI * radius;
+          const pct = r.target > 0 ? Math.min(1, r.consumed / r.target) : 0;
+          return (
+            <React.Fragment key={i}>
+              <Circle cx={c} cy={c} r={radius} stroke={r.color + '26'} strokeWidth={strokeWidth} fill="none" />
+              <Circle
+                cx={c} cy={c} r={radius}
+                stroke={r.color} strokeWidth={strokeWidth} fill="none"
+                strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)} strokeLinecap="round"
+              />
+            </React.Fragment>
+          );
+        })}
+      </G>
+    </Svg>
+  );
+}
+
+/** Compact macro row shown beside the rings: color dot, label, consumed/target. */
+function MiniMacro({ color, label, consumed, target }: {
+  color: string; label: string; consumed: number; target: number;
+}) {
+  return (
+    <View style={styles.miniRow}>
+      <View style={[styles.miniDot, { backgroundColor: color }]} />
+      <Text style={styles.miniLabel}>{label}</Text>
+      <Text style={styles.miniVal}>{Math.round(consumed)} / {target} g</Text>
+    </View>
+  );
+}
+
 export default function NutritionScreen() {
   const { profile } = useCurrentUser();
   const insets = useSafeAreaInsets();
@@ -117,7 +178,8 @@ export default function NutritionScreen() {
   const [dayEntries, setDayEntries] = useState<FoodLogEntry[]>([]);
 
   // Goals setup (first-open questionnaire) + progress
-  const [setupVals, setSetupVals] = useState({ cals: '', protein: '', carbs: '', fat: '' });
+  const [setupVals, setSetupVals] = useState({ cals: '', protein: '', carbs: '', fat: '', fiber: '' });
+  const [progressRange, setProgressRange] = useState<'week' | 'month'>('week');
   const [savingTargets, setSavingTargets] = useState(false);
   const [progressDays, setProgressDays] = useState<{ date: string; calories: number }[]>([]);
   const [loadingProgress, setLoadingProgress] = useState(false);
@@ -189,7 +251,9 @@ export default function NutritionScreen() {
     const goal = (profile as any)?.goal as Goal | undefined;
     const weightKg = (profile as any)?.weightKg;
     const suggested = suggest(goal, weightKg ?? 75);
-    setTargets(t ?? suggested);
+    // Back-fill fibre target for goals saved before fibre existed.
+    const resolved = t ? { ...t, fiberG: t.fiberG || suggested.fiberG } : suggested;
+    setTargets(resolved);
     setDayEntries(entries);
 
     // First open (no saved goals) → prefill the setup form with suggestions
@@ -200,6 +264,7 @@ export default function NutritionScreen() {
         protein: String(suggested.proteinG),
         carbs: String(suggested.carbsG),
         fat: String(suggested.fatG),
+        fiber: String(suggested.fiberG),
       });
       setViewMode('setup');
     }
@@ -214,6 +279,7 @@ export default function NutritionScreen() {
       proteinG: Math.max(0, parseInt(setupVals.protein) || 0),
       carbsG: Math.max(0, parseInt(setupVals.carbs) || 0),
       fatG: Math.max(0, parseInt(setupVals.fat) || 0),
+      fiberG: Math.max(0, parseInt(setupVals.fiber) || 0),
     };
     setSavingTargets(true);
     try {
@@ -234,26 +300,29 @@ export default function NutritionScreen() {
         protein: String(targets.proteinG),
         carbs: String(targets.carbsG),
         fat: String(targets.fatG),
+        fiber: String(targets.fiberG),
       });
     }
     setViewMode('setup');
   };
 
-  const loadProgress = async () => {
+  const loadProgress = async (range: 'week' | 'month' = progressRange) => {
     const uid = currentUserId();
     if (!uid) return;
+    setProgressRange(range);
     setLoadingProgress(true);
     setViewMode('progress');
     try {
-      // Last 7 days of calorie intake.
-      const days: { date: string; calories: number }[] = [];
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const entries = await getFoodLog(uid, iso);
-        days.push({ date: iso, calories: sumDay(entries).dailyCalories });
-      }
+      const n = range === 'week' ? 7 : 30;
+      const days = await Promise.all(
+        Array.from({ length: n }, (_, idx) => {
+          const i = n - 1 - idx;
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          return getFoodLog(uid, iso).then((entries) => ({ date: iso, calories: sumDay(entries).dailyCalories }));
+        }),
+      );
       setProgressDays(days);
     } catch {
       setProgressDays([]);
@@ -491,6 +560,7 @@ export default function NutritionScreen() {
       { key: 'protein', label: 'Protein', unit: 'g' },
       { key: 'carbs', label: 'Carbs', unit: 'g' },
       { key: 'fat', label: 'Fat', unit: 'g' },
+      { key: 'fiber', label: 'Fibre', unit: 'g' },
     ];
     return (
       <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -535,45 +605,73 @@ export default function NutritionScreen() {
     );
   }
 
-  // ── Progress (last 7 days) ───────────────────────────────────────────────
+  // ── Progress (week / month calorie history) ──────────────────────────────
   if (viewMode === 'progress') {
     const goalCals = targets?.dailyCalories || 0;
     const maxCals = Math.max(goalCals, ...progressDays.map((d) => d.calories), 1);
+    const loggedDays = progressDays.filter((d) => d.calories > 0);
+    const avg = loggedDays.length
+      ? Math.round(loggedDays.reduce((a, d) => a + d.calories, 0) / loggedDays.length)
+      : 0;
+    const CHART_H = 180;
     return (
       <View style={[styles.screen, { paddingTop: insets.top }]}>
         <View style={styles.searchHeader}>
           <TouchableOpacity onPress={() => setViewMode('diary')} style={styles.backBtn}>
             <ArrowLeft size={20} color={colors.text} />
           </TouchableOpacity>
-          <Typography variant="h2">Progress · Last 7 days</Typography>
+          <Typography variant="h2">Progress</Typography>
         </View>
         <ScrollView contentContainerStyle={styles.content}>
+          {/* Range toggle */}
+          <View style={styles.rangeToggle}>
+            {(['week', 'month'] as const).map((r) => (
+              <TouchableOpacity
+                key={r}
+                style={[styles.rangeBtn, progressRange === r && styles.rangeBtnActive]}
+                onPress={() => loadProgress(r)}
+              >
+                <Text style={[styles.rangeBtnText, progressRange === r && styles.rangeBtnTextActive]}>
+                  {r === 'week' ? 'Week' : 'Month'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           {loadingProgress ? (
             <ActivityIndicator color={colors.warning} style={{ marginTop: 40 }} />
           ) : (
             <>
-              <Typography variant="caption" color={colors.textMuted} style={{ marginBottom: 4 }}>
-                Daily calories vs your {goalCals} kcal goal
+              <Typography variant="caption" color={colors.textMuted}>
+                Daily calories vs your {goalCals} kcal goal · avg {avg} kcal on logged days
               </Typography>
-              {progressDays.map((d) => {
-                const pct = Math.min(100, Math.round((d.calories / maxCals) * 100));
-                const over = goalCals > 0 && d.calories > goalCals;
-                const dow = new Date(d.date + 'T00:00:00').toLocaleDateString('default', { weekday: 'short' });
-                return (
-                  <View key={d.date} style={styles.progRow}>
-                    <Text style={styles.progDay}>{dow}</Text>
-                    <View style={styles.progBarTrack}>
-                      <View style={[styles.progBarFill, { width: `${pct}%`, backgroundColor: over ? colors.danger : colors.warning }]} />
-                    </View>
-                    <Text style={styles.progVal}>{d.calories}</Text>
-                  </View>
-                );
-              })}
-              <View style={styles.progLegend}>
-                <Text style={styles.progLegendText}>
-                  Avg: {progressDays.length ? Math.round(progressDays.reduce((a, d) => a + d.calories, 0) / progressDays.length) : 0} kcal/day
-                </Text>
-              </View>
+
+              {/* Vertical bar chart (scrolls horizontally for the month) */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartScroll}>
+                <View style={[styles.chart, { height: CHART_H + 28 }]}>
+                  {progressDays.map((d) => {
+                    const h = Math.max(2, Math.round((d.calories / maxCals) * CHART_H));
+                    const over = goalCals > 0 && d.calories > goalCals;
+                    const dt = new Date(d.date + 'T00:00:00');
+                    const label = progressRange === 'week'
+                      ? dt.toLocaleDateString('default', { weekday: 'short' }).slice(0, 2)
+                      : String(dt.getDate());
+                    return (
+                      <View key={d.date} style={styles.chartCol}>
+                        <View style={[styles.chartBarWrap, { height: CHART_H }]}>
+                          <View
+                            style={[
+                              styles.chartBar,
+                              { height: h, backgroundColor: d.calories === 0 ? colors.surfaceAlt : over ? colors.danger : colors.warning },
+                            ]}
+                          />
+                        </View>
+                        <Text style={styles.chartLabel}>{label}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </ScrollView>
             </>
           )}
         </ScrollView>
@@ -597,7 +695,7 @@ export default function NutritionScreen() {
             </View>
           </View>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerIconBtn} onPress={loadProgress}>
+            <TouchableOpacity style={styles.headerIconBtn} onPress={() => loadProgress()}>
               <TrendingUp size={20} color={colors.warning} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.headerIconBtn} onPress={openEditTargets}>
@@ -607,34 +705,31 @@ export default function NutritionScreen() {
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
-          {/* Calorie Dial + Macro Bars */}
+          {/* Macro rings (cals/protein/carbs/fat/fibre) + vertical legend */}
           <Card style={styles.macroCard}>
-            <View style={styles.calorieDialRow}>
-              <View style={styles.dialWrapper}>
-                <CircularProgress percent={caloriePercent} color={colors.warning} size={100} />
-                <View style={styles.dialCenter}>
-                  <Flame size={14} color={colors.warning} />
-                  <Text style={styles.dialValue}>{calorieRemaining}</Text>
-                  <Text style={styles.dialLabel}>kcal left</Text>
+            <View style={styles.ringsRow}>
+              <View style={styles.ringsWrap}>
+                <MacroRings totals={totals} targets={t} size={150} />
+                <View style={styles.ringsCenter}>
+                  <Flame size={20} color={colors.warning} />
                 </View>
               </View>
-
-              <View style={styles.calorieMeta}>
+              <View style={styles.ringsMeta}>
                 <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>TODAY'S INTAKE</Typography>
                 <View style={styles.calorieNumberRow}>
                   <Typography variant="h1">{totals.dailyCalories}</Typography>
-                  <Typography variant="body" color={colors.textMuted}>/ {t.dailyCalories} kcal</Typography>
+                  <Typography variant="body" color={colors.textMuted}>/ {t.dailyCalories}</Typography>
                 </View>
-                <Typography variant="caption" color={colors.warning} style={{ marginTop: 2, fontSize: 11 }}>
+                <Typography variant="caption" color={colors.warning} style={{ fontSize: 11, marginBottom: 8 }}>
                   {caloriePercent}% of daily budget
                 </Typography>
-              </View>
-            </View>
 
-            <View style={styles.macroBarsRow}>
-              <MacroBar label="Protein" consumed={totals.proteinG} target={t.proteinG} percent={proteinPercent} color="#06b6d4" />
-              <MacroBar label="Carbs" consumed={totals.carbsG} target={t.carbsG} percent={carbsPercent} color="#eab308" />
-              <MacroBar label="Fats" consumed={totals.fatG} target={t.fatG} percent={fatPercent} color="#f87171" />
+                {/* Small macro details, line by line */}
+                <MiniMacro color={MACRO_COLORS.protein} label="Protein" consumed={totals.proteinG} target={t.proteinG} />
+                <MiniMacro color={MACRO_COLORS.carbs} label="Carbs" consumed={totals.carbsG} target={t.carbsG} />
+                <MiniMacro color={MACRO_COLORS.fat} label="Fat" consumed={totals.fatG} target={t.fatG} />
+                <MiniMacro color={MACRO_COLORS.fiber} label="Fibre" consumed={totals.fiberG} target={t.fiberG} />
+              </View>
             </View>
 
             {/* Water Tracker */}
@@ -1143,14 +1238,28 @@ const styles = StyleSheet.create({
   },
   setupSaveText: { color: colors.bg, fontSize: 15, fontWeight: '800' },
 
-  // Progress
-  progRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  progDay: { color: colors.textMuted, fontSize: 12, fontWeight: '700', width: 36 },
-  progBarTrack: { flex: 1, height: 22, borderRadius: 6, backgroundColor: colors.surface, overflow: 'hidden' },
-  progBarFill: { height: '100%', borderRadius: 6 },
-  progVal: { color: colors.text, fontSize: 13, fontWeight: '700', width: 52, textAlign: 'right' },
-  progLegend: { marginTop: 16, alignItems: 'center' },
-  progLegendText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+  // Macro rings + compact macro list (all inside the summary card's top row)
+  ringsRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  ringsWrap: { width: 150, height: 150, alignItems: 'center', justifyContent: 'center' },
+  ringsCenter: { position: 'absolute', alignItems: 'center' },
+  ringsMeta: { flex: 1 },
+  miniRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 5 },
+  miniDot: { width: 8, height: 8, borderRadius: 4 },
+  miniLabel: { color: colors.text, fontSize: 12, fontWeight: '600', flex: 1 },
+  miniVal: { color: colors.textMuted, fontSize: 12, fontWeight: '600' },
+
+  // Progress range + chart
+  rangeToggle: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 999, padding: 4, alignSelf: 'flex-start', gap: 4 },
+  rangeBtn: { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 999 },
+  rangeBtnActive: { backgroundColor: colors.warning },
+  rangeBtnText: { color: colors.textMuted, fontSize: 13, fontWeight: '700' },
+  rangeBtnTextActive: { color: colors.bg },
+  chartScroll: { marginTop: 4 },
+  chart: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, paddingVertical: 4 },
+  chartCol: { alignItems: 'center', width: 30 },
+  chartBarWrap: { justifyContent: 'flex-end' },
+  chartBar: { width: 20, borderRadius: 5 },
+  chartLabel: { color: colors.textMuted, fontSize: 10, fontWeight: '600', marginTop: 6 },
 
   content: { padding: 16, gap: 16, paddingBottom: 100 },
 

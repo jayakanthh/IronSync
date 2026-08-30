@@ -66,8 +66,9 @@ export function sumDay(entries: FoodLogEntry[]): NutritionTargets {
       proteinG: acc.proteinG + e.proteinG,
       carbsG: acc.carbsG + e.carbsG,
       fatG: acc.fatG + e.fatG,
+      fiberG: acc.fiberG + (e.fiberG ?? 0),
     }),
-    { dailyCalories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+    { dailyCalories: 0, proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 },
   );
 }
 
