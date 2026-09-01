@@ -1,4 +1,3 @@
-import { Alert } from 'react-native';
 import { getPlan, getMyPlans, getExercisesByIds } from '../services/index';
 import type { User } from '../models/index';
 
@@ -39,39 +38,25 @@ async function buildDefaultPlanParams(profile: User): Promise<LogWorkoutParams |
   };
 }
 
+const FREE_WORKOUT: LogWorkoutParams = { exercises: [], sourceLabel: 'Free Workout' };
+
 /**
- * Ask the user how they want to train — a blank Free Workout, or their default
- * plan preloaded — then hand the LogWorkout params to `goToLog` (each screen
- * supplies its own navigation, since the route lives in the Workouts stack).
+ * Start a workout straight away: from the user's default (active) plan if they
+ * have one, otherwise a blank free workout. `goToLog` navigates to LogWorkout
+ * (each screen supplies its own, since the route lives in the Workouts stack).
  */
-export function promptStartWorkout(
+export async function startWorkout(
   profile: User | null | undefined,
   goToLog: (params: LogWorkoutParams) => void,
-): void {
-  Alert.alert('Start Workout', 'How do you want to train?', [
-    {
-      text: 'Free Workout',
-      onPress: () => goToLog({ exercises: [], sourceLabel: 'Free Workout' }),
-    },
-    {
-      text: 'Follow Default Plan',
-      onPress: async () => {
-        if (!profile) return;
-        try {
-          const params = await buildDefaultPlanParams(profile);
-          if (!params) {
-            Alert.alert(
-              'No plan to follow',
-              'Create a routine and set it as your default (tap the star on a routine in Workouts) first.',
-            );
-            return;
-          }
-          goToLog(params);
-        } catch {
-          Alert.alert('Error', 'Could not load your plan. Please try again.');
-        }
-      },
-    },
-    { text: 'Cancel', style: 'cancel' },
-  ]);
+): Promise<void> {
+  if (!profile) {
+    goToLog(FREE_WORKOUT);
+    return;
+  }
+  try {
+    const params = await buildDefaultPlanParams(profile);
+    goToLog(params ?? FREE_WORKOUT);
+  } catch {
+    goToLog(FREE_WORKOUT);
+  }
 }

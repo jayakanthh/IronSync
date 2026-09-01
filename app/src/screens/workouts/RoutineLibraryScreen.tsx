@@ -277,7 +277,7 @@ export default function RoutineLibraryScreen({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md, paddingTop: spacing.lg, gap: spacing.md, paddingBottom: 100 },
+  content: { padding: spacing.md, paddingTop: spacing.lg, gap: spacing.md, paddingBottom: 150 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   h1: { color: colors.text, fontSize: 22, fontWeight: '800' },
   createBtn: {

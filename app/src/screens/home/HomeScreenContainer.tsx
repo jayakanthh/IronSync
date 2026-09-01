@@ -5,7 +5,8 @@ import HomeScreen from './HomeScreen';
 import { initialUserProfile } from '../../data/mockData';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { userToProfile } from '../../adapters/adapters';
-import { promptStartWorkout } from '../../utils/startWorkout';
+import { startWorkout } from '../../utils/startWorkout';
+import StartWorkoutButton from '../../components/common/StartWorkoutButton';
 import { TopHeader } from '../../components/common/TopHeader';
 import {
   getPlan,
@@ -170,6 +171,9 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
     caloriesToday: calories,
   };
 
+  const startWorkoutFromHome = () =>
+    startWorkout(profile, (params) => navigation.navigate('Workouts', { screen: 'LogWorkout', params }));
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <TopHeader
@@ -187,16 +191,13 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
         todayTitle={today?.title}
         todaySubtitle={today?.subtitle}
         onFindMatchClick={() => navigation.navigate('Workouts')} // Fallback: Route to routines
-        onStartTodayPlan={() =>
-          promptStartWorkout(profile, (params) =>
-            navigation.navigate('Workouts', { screen: 'LogWorkout', params }),
-          )
-        }
+        onStartTodayPlan={() => startWorkoutFromHome()}
         onSelectBuddyWorkout={(buddy) => {
           // If buddy is training, creator invites B or joins
           navigation.navigate('Community');
         }}
       />
+      <StartWorkoutButton onPress={startWorkoutFromHome} />
     </View>
   );
 }

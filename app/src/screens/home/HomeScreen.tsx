@@ -262,7 +262,7 @@ export default function HomeScreen({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md, paddingTop: 12, gap: spacing.lg, paddingBottom: 96 },
+  content: { padding: spacing.md, paddingTop: 12, gap: spacing.lg, paddingBottom: 150 },
   h1: { color: colors.text, fontSize: 22, fontWeight: '800' },
   subtext: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
 

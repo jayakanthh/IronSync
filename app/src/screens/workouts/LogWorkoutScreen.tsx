@@ -353,10 +353,15 @@ export default function LogWorkoutScreen({
   // the screen gets "stuck". Fall back to the Workouts home in that case.
   const dismiss = useCallback(() => {
     const nav = navigation as any;
-    if (typeof nav.canGoBack === 'function' && !nav.canGoBack()) {
-      nav.navigate('WorkoutsHome');
-    } else {
+    // popToTop clears this screen off the Workouts stack. Plain goBack() can
+    // return to the *Home tab* while leaving the finished/discarded session on
+    // the stack — so tapping Workouts later would restore the stale session.
+    if (typeof nav.popToTop === 'function') {
+      nav.popToTop();
+    } else if (typeof nav.canGoBack === 'function' && nav.canGoBack()) {
       nav.goBack();
+    } else {
+      nav.navigate('WorkoutsHome');
     }
   }, [navigation]);
 
