@@ -42,16 +42,20 @@ IronSync is built around five pillars:
 
 ---
 
-## 🗺️ Where we're headed
+## 🗺️ Where we are
 
-We're building in phases so we always have something working. Short version:
+We build in phases so we always have something working. Short version:
 
-1. **MVP** — profile + log a workout + streak counter (the core daily loop)
-2. **PRs & Friend Group** — personal records, the crew, PR leaderboard & "someone beat your PR" alerts
-3. **Nutrition** — diet plans, calorie & macro tracking, food log
-4. **Supplements & polish** — supplement result sharing, notifications, refinement
+1. ✅ **MVP** — profile + log a workout + streak counter (the core daily loop)
+2. ✅ **PRs & Friend Group** — personal records, the crew, PR leaderboard, in-app "someone beat your PR" alerts
+3. ✅ **Nutrition** — calorie & macro targets, food log, macro rings, weekly/monthly progress
+4. 🚧 **Supplements & polish** — activity feed, badges and the food database are in; supplement sharing, weekly recap, barcode scan and progress photos aren't.
 
-Full plan with milestones: **[docs/ROADMAP.md](docs/ROADMAP.md)**.
+We also built a few things that were never on the list: **live duo/group workouts**, **communities & challenges**, a **7-theme** system, and a **muscle heatmap**.
+
+**Still blocked:** real push notifications ("beat your PR", streak reminders) need Cloud Functions, which need the **Blaze** plan. The server code is written and waiting in `backend/functions/`; until then crew boards sync client-side.
+
+Full plan with per-item status: **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
 ---
 
@@ -72,15 +76,22 @@ IronSync/
 ├── README.md              ← you are here
 ├── app/                   ← the Expo (React Native + TS) mobile app
 │   └── src/
-│       ├── screens/       ← full screens        (Pruthvi / UI)
-│       ├── components/    ← reusable UI pieces   (Pruthvi / UI)
-│       ├── theme/         ← colors & spacing     (Pruthvi / UI)
-│       ├── models/        ← shared data types    (the contract — both)
-│       └── services/      ← Firebase & data access (jaikanth / backend)
-├── backend/               ← Firestore rules, indexes & Cloud Functions (jaikanth)
+│       ├── screens/       ← full screens         (Pruthvi / UI)
+│       ├── components/    ← reusable UI pieces    (Pruthvi / UI)
+│       ├── theme/         ← the 7 themes + tokens (Pruthvi / UI)
+│       ├── navigation/    ← tab + stack navigators
+│       ├── models/        ← shared data types     (the contract — both)
+│       ├── types/         ← UI view-models        (Pruthvi / UI)
+│       ├── adapters/      ← models ⇄ view-models bridge (both)
+│       ├── services/      ← Firebase data access  (jaikanth / backend)
+│       ├── config/        ← Firebase init + your gitignored firebaseConfig.ts
+│       ├── context/       ← app-wide state (current user)
+│       ├── data/          ← mock/seed data for the UI
+│       └── utils/         ← formatting, heatmap & workout helpers
+├── backend/               ← Firestore rules, indexes, Cloud Functions & seed scripts (jaikanth)
 ├── docs/                  ← all planning & design docs
 │   ├── FEATURES.md        ← every feature, broken down
-│   ├── ROADMAP.md         ← phased build plan & milestones
+│   ├── ROADMAP.md         ← phased build plan & current status
 │   ├── DATA_MODEL.md      ← how data is organized (Firebase sketch)
 │   ├── ARCHITECTURE.md    ← tech decisions & trade-offs
 │   └── CONTRIBUTING.md    ← how we work together (branches, workflow)
@@ -88,21 +99,28 @@ IronSync/
 └── .gitignore
 ```
 
-**Who owns what:** Pruthvi builds UI in `app/src/{screens,components,theme}`, jaikanth builds the backend in `app/src/services` + `backend/`, and both keep the shared data shapes in `app/src/models` in sync — that's the contract that lets you work in parallel.
+**Who owns what:** Pruthvi builds UI in `app/src/{screens,components,theme,types}`, jaikanth builds the backend in `app/src/{services,config}` + `backend/`, and both keep the shared data shapes in `app/src/models` in sync — that's the contract that lets you work in parallel.
 
-**Run the app:** `cd app && npm install && npm start` — see [app/README.md](app/README.md).
+**The three type layers** (don't collapse them): `models/` is the persisted Firestore contract and the source of truth, `types/ironsync.ts` holds the richer UI view-models, and `adapters/adapters.ts` maps between them.
 
 ---
 
 ## 🚀 Getting started
 
-Right now this is a **planning repo** — no app code yet. To get involved:
+```bash
+cd app
+npm install
+cp src/config/firebaseConfig.example.ts src/config/firebaseConfig.ts   # paste your Firebase values
+npm start
+```
 
-1. Read **[docs/FEATURES.md](docs/FEATURES.md)** to see what we're building.
-2. Read **[docs/ROADMAP.md](docs/ROADMAP.md)** to see what's next.
-3. Check **[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)** for how we branch, commit, and divide work.
+Then scan the QR code with **Expo Go** on your phone.
 
-When we start coding, setup instructions go here.
+> ⚠️ **Expo SDK is pinned to 54** — our phones' Expo Go can't go higher. Don't bump it without checking what Expo Go on both phones supports, or the app stops running on our devices.
+
+`src/config/firebaseConfig.ts` is gitignored so each of us points at our own project. The web-config values in it aren't really secrets (they ship inside any client app anyway) — the actual protection is [backend/firestore.rules](backend/firestore.rules). What *is* a secret is `backend/seed/serviceAccount.json`; that must never be committed.
+
+Also worth reading: **[docs/FEATURES.md](docs/FEATURES.md)** (what we're building), **[docs/ROADMAP.md](docs/ROADMAP.md)** (what's left), and **[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)** (branches & workflow).
 
 ---
 
