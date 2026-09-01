@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useStartWorkoutScroll } from '../../components/common/StartWorkoutButton';
 import { Search, Bookmark, Star, Plus, Play, X, Pencil } from 'lucide-react-native';
 import { colors, spacing } from '../../theme/colors';
 import type { Routine } from '../../types/ironsync';
@@ -32,6 +33,8 @@ export default function RoutineLibraryScreen({
 }: RoutineLibraryScreenProps) {
   // A routine is editable only by its creator.
   const isMine = (r: Routine) => !!currentUserName && r.creator === currentUserName;
+  // Drives the floating Start-New-Workout pill: it slides away as you scroll down.
+  const scrollProps = useStartWorkoutScroll();
   const [activeTab, setActiveTab] = useState<typeof TABS[number]>('My Routines');
   const [selectedFilter, setSelectedFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,7 +58,7 @@ export default function RoutineLibraryScreen({
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} {...scrollProps}>
         <View style={styles.headerRow}>
           <Text style={styles.h1}>Routine Library</Text>
           <TouchableOpacity style={styles.createBtn} onPress={onCreateRoutineClick} activeOpacity={0.85}>

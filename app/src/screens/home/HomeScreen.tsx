@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View, Switch } from 'react-native';
+import { useStartWorkoutScroll } from '../../components/common/StartWorkoutButton';
 import Svg, { Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -45,9 +46,11 @@ export default function HomeScreen({
   todaySubtitle,
 }: HomeScreenProps) {
   const [showFriendsWorkouts, setShowFriendsWorkouts] = useState(true);
+  // Drives the floating Start-New-Workout pill: it slides away as you scroll down.
+  const scrollProps = useStartWorkoutScroll();
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content} {...scrollProps}>
       {/* Welcome Greeting */}
       <View>
         <Text style={styles.h1}>Welcome back, {user.name}</Text>

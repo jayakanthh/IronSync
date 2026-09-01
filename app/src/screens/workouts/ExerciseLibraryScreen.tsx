@@ -8,6 +8,7 @@ import { colors, spacing, radius } from '../../theme/colors';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { getExercisesByIds, getUserRecentExercises } from '../../services/index';
 import type { Exercise, MuscleGroup } from '../../types/ironsync';
+import { useStartWorkoutScroll } from '../../components/common/StartWorkoutButton';
 
 interface ExerciseLibraryScreenProps {
   exercises: Exercise[];
@@ -41,6 +42,8 @@ export default function ExerciseLibraryScreen({
   onSearchChange,
 }: ExerciseLibraryScreenProps) {
   const { profile } = useCurrentUser();
+  // Drives the floating Start-New-Workout pill: it slides away as you scroll down.
+  const scrollProps = useStartWorkoutScroll();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<CategoryType>('Chest');
   const [activeDetail, setActiveDetail] = useState<Exercise | null>(null);
@@ -189,7 +192,7 @@ export default function ExerciseLibraryScreen({
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" {...scrollProps}>
         {/* Quick Search */}
         <View style={styles.searchWrap}>
           <Search size={16} color={colors.textMuted} style={styles.searchIcon} />

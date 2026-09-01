@@ -6,7 +6,7 @@ import { initialUserProfile } from '../../data/mockData';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { userToProfile } from '../../adapters/adapters';
 import { startWorkout } from '../../utils/startWorkout';
-import StartWorkoutButton from '../../components/common/StartWorkoutButton';
+import StartWorkoutButton, { StartWorkoutScrollProvider } from '../../components/common/StartWorkoutButton';
 import { TopHeader } from '../../components/common/TopHeader';
 import {
   getPlan,
@@ -175,30 +175,32 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
     startWorkout(profile, (params) => navigation.navigate('Workouts', { screen: 'LogWorkout', params }));
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      <TopHeader
-        user={user}
-        unreadNotifsCount={unreadNotifsCount}
-        onAvatarPress={() => navigation.navigate('Profile')}
-        onNotificationPress={() => navigation.navigate('Notifications')}
-        onOpenStreak={() => navigation.navigate('Streak')}
-        onOpenStrengthPR={() => navigation.navigate('StrengthPR')}
-      />
-      <HomeScreen
-        user={user}
-        buddies={trainingNowList}
-        history={workoutsList}
-        todayTitle={today?.title}
-        todaySubtitle={today?.subtitle}
-        onFindMatchClick={() => navigation.navigate('Workouts')} // Fallback: Route to routines
-        onStartTodayPlan={() => startWorkoutFromHome()}
-        onSelectBuddyWorkout={(buddy) => {
-          // If buddy is training, creator invites B or joins
-          navigation.navigate('Community');
-        }}
-      />
-      <StartWorkoutButton onPress={startWorkoutFromHome} />
-    </View>
+    <StartWorkoutScrollProvider>
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <TopHeader
+          user={user}
+          unreadNotifsCount={unreadNotifsCount}
+          onAvatarPress={() => navigation.navigate('Profile')}
+          onNotificationPress={() => navigation.navigate('Notifications')}
+          onOpenStreak={() => navigation.navigate('Streak')}
+          onOpenStrengthPR={() => navigation.navigate('StrengthPR')}
+        />
+        <HomeScreen
+          user={user}
+          buddies={trainingNowList}
+          history={workoutsList}
+          todayTitle={today?.title}
+          todaySubtitle={today?.subtitle}
+          onFindMatchClick={() => navigation.navigate('Workouts')} // Fallback: Route to routines
+          onStartTodayPlan={() => startWorkoutFromHome()}
+          onSelectBuddyWorkout={(buddy) => {
+            // If buddy is training, creator invites B or joins
+            navigation.navigate('Community');
+          }}
+        />
+        <StartWorkoutButton onPress={startWorkoutFromHome} />
+      </View>
+    </StartWorkoutScrollProvider>
   );
 }
 
