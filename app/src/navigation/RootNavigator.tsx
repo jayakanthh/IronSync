@@ -55,6 +55,8 @@ function MainTabs() {
           name="Workouts" 
           component={WorkoutsStack} 
           options={{
+            // Route name stays "Workouts" — navigate('Workouts') is used all over.
+            tabBarLabel: 'Library',
             tabBarIcon: ({ color }) => <Dumbbell size={20} color={color} />,
           }}
         />

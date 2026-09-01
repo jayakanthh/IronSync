@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { colors, spacing, radius } from '../../theme/colors';
 import { Card } from '../ui/Card';
-import { getFriends, getUser, getWorkoutHistory } from '../../services/index';
+import { getFriends, getWorkoutHistory } from '../../services/index';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { useNavigation } from '@react-navigation/native';
 import { getRelativeTime } from '../../utils/formatting/relativeTime';
@@ -23,9 +23,7 @@ export default function FriendsPanel() {
   const [friends, setFriends] = useState<{ friendId: string; name: string; since: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [friendDetails, setFriendDetails] = useState<Record<string, {
-    username: string;
     lastActiveText: string;
-    recentWorkoutText: string;
   }>>({});
 
   const load = useCallback(async () => {
@@ -38,22 +36,13 @@ export default function FriendsPanel() {
       const details: Record<string, any> = {};
       await Promise.all(f.map(async (friend) => {
         try {
-          const userDoc = await getUser(friend.friendId);
-          let recentText = 'No recent workouts';
-          let lastActiveTime: number | null = null;
-          
+          // Their last workout is only used to date the status line — the workout
+          // itself is on their profile, one tap away.
           const history = await getWorkoutHistory(friend.friendId);
-          if (history && history.length > 0) {
-            const last = history[0];
-            recentText = `${last.planName || 'Workout'} (${getRelativeTime(last.createdAt || last.date)})`;
-            lastActiveTime = last.createdAt || Date.now();
-          }
-          
+          const lastActiveTime = history?.length ? history[0].createdAt || Date.now() : null;
+
           details[friend.friendId] = {
-            // username is stored with a leading '@' already — don't prepend another
-            username: userDoc?.username || '@lifter',
             lastActiveText: lastActiveTime ? `Active ${getRelativeTime(lastActiveTime)}` : 'Online',
-            recentWorkoutText: recentText
           };
         } catch (err) {
           console.error("Error loading friend details:", err);
@@ -88,11 +77,7 @@ export default function FriendsPanel() {
         <Text style={styles.empty}>No friends yet — search and add someone above.</Text>
       ) : (
         friends.map((f) => {
-          const detail = friendDetails[f.friendId] || {
-            username: '@lifter',
-            lastActiveText: 'Online',
-            recentWorkoutText: 'No recent workouts'
-          };
+          const detail = friendDetails[f.friendId] || { lastActiveText: 'Online' };
           return (
             // Tap anywhere on the card (name included) to open their profile —
             // removing a friend now lives on the profile screen.
@@ -108,30 +93,21 @@ export default function FriendsPanel() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{f.name}</Text>
-                    <Text style={styles.username}>{detail.username}</Text>
+                    <View style={styles.statusRow}>
+                      <View style={styles.onlineIndicator} />
+                      <Text style={styles.statusText}>{detail.lastActiveText}</Text>
+                    </View>
                   </View>
-                  <View style={styles.statusBox}>
-                    <View style={styles.onlineIndicator} />
-                    <Text style={styles.statusText}>{detail.lastActiveText}</Text>
-                  </View>
+                  <TouchableOpacity
+                    style={styles.duoBtn}
+                    onPress={() => navigation.navigate('DuoStack', {
+                      screen: 'DuoInvite',
+                      params: { partnerId: f.friendId, partnerName: f.name, mode: 'send' }
+                    })}
+                  >
+                    <Text style={styles.actionTextPrimary}>DUO</Text>
+                  </TouchableOpacity>
                 </View>
-
-                <View style={styles.workoutBox}>
-                  <Text style={styles.workoutLabel}>Recent workout:</Text>
-                  <Text style={styles.workoutText} numberOfLines={1}>
-                    {detail.recentWorkoutText}
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.duoBtn}
-                  onPress={() => navigation.navigate('DuoStack', {
-                    screen: 'DuoInvite',
-                    params: { partnerId: f.friendId, partnerName: f.name, mode: 'send' }
-                  })}
-                >
-                  <Text style={styles.actionTextPrimary}>DUO</Text>
-                </TouchableOpacity>
               </Card>
             </TouchableOpacity>
           );
@@ -221,20 +197,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  username: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  statusBox: {
+  statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.surfaceAlt,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    marginTop: 3,
   },
   onlineIndicator: {
     width: 6,
@@ -244,26 +211,8 @@ const styles = StyleSheet.create({
   },
   statusText: {
     color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  workoutBox: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: radius.md,
-    padding: 10,
-    marginTop: 2,
-  },
-  workoutLabel: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  workoutText: {
-    color: colors.text,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    marginTop: 2,
   },
   friendActions: {
     flexDirection: 'row',
@@ -291,10 +240,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     alignItems: 'center',
   },
+  // Small pill sitting where the online badge used to be.
   duoBtn: {
     backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: 11,
+    borderRadius: radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     alignItems: 'center',
   },
   actionTextPrimary: {

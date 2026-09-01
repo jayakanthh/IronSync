@@ -84,14 +84,8 @@ export default function WorkoutsScreen({
   return (
     <StartWorkoutScrollProvider>
       <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
-        {/* Exercise Hub Launch Header */}
-        <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-          <Text style={[styles.headerTitle, { color: theme.colors.textPrimary, fontWeight: theme.typography.headingWeight }]}>Exercise Hub</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>Start training splits or log free workouts</Text>
-        </View>
-
-        {/* Selector Tabs */}
-        <View style={[styles.segmentWrap, { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.border }]}>
+        {/* Selector Tabs — first thing on the screen, so they carry the top inset. */}
+        <View style={[styles.segmentWrap, { marginTop: insets.top + spacing.sm, backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.border }]}>
           <TouchableOpacity
             style={[styles.segment, tab === 'routines' && [styles.segmentActive, { backgroundColor: theme.colors.primary }]]}
             onPress={() => setTab('routines')}
@@ -165,9 +159,6 @@ export default function WorkoutsScreen({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  header: { paddingHorizontal: spacing.md, paddingTop: spacing.md, gap: 2 },
-  headerTitle: { color: colors.text, fontSize: 22, fontWeight: '800' },
-  headerSubtitle: { color: colors.textMuted, fontSize: 13 },
   
   startWorkoutCta: {
     backgroundColor: colors.primary,
