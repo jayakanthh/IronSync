@@ -25,6 +25,7 @@ import {
   getFollowers,
   getFollowing,
   getWorkoutHistory,
+  getFriendWorkouts,
   getIncomingRequests,
   effectiveCurrentStreak,
   todayISO,
@@ -53,6 +54,7 @@ export default function UserProfileScreen() {
 
   const loadData = useCallback(async () => {
     if (!targetUserId || !profile) return;
+    const isMe = targetUserId === profile.id;
     setLoading(true);
     try {
       const [u, isFollowingCheck, followers, following, wList] = await Promise.all([
@@ -60,7 +62,9 @@ export default function UserProfileScreen() {
         isFollowing(profile.id, targetUserId),
         getFollowers(targetUserId),
         getFollowing(targetUserId),
-        getWorkoutHistory(targetUserId, 20),
+        // Someone else's workouts must go through the friend-visible query;
+        // the plain history read is owner-only and always came back empty.
+        isMe ? getWorkoutHistory(targetUserId, 20) : getFriendWorkouts(targetUserId, 20),
       ]);
 
       if (!u) {

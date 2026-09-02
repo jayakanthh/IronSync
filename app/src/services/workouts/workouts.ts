@@ -86,6 +86,10 @@ export async function logWorkout(
 
   // 1. Save the workout.
   const ref = await addDoc(collection(db, 'users', userId, 'workouts'), {
+    // Default to friends-visible: the point of the crew is seeing each other
+    // train. Settings > stats sharing is the master switch, enforced in
+    // firestore.rules, and a workout can still be logged as 'only_me'.
+    visibility: workout.visibility ?? 'friends',
     ...workout,
     date,
     createdAt: Date.now(),
@@ -196,6 +200,28 @@ export async function getWorkoutHistory(userId: string, max = 30): Promise<Worko
   );
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Workout, 'id'>) }));
+}
+
+/**
+ * A friend's shared workouts. The `visibility` filter isn't cosmetic — the
+ * security rule only permits reading docs shared with friends, so a query
+ * without it is rejected outright rather than returning less.
+ *
+ * Returns [] if you're not their friend or they've turned stats sharing off.
+ */
+export async function getFriendWorkouts(friendId: string, max = 10): Promise<Workout[]> {
+  try {
+    const q = query(
+      collection(db, 'users', friendId, 'workouts'),
+      where('visibility', 'in', ['friends', 'everyone']),
+      orderBy('date', 'desc'),
+      limit(max),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Workout, 'id'>) }));
+  } catch {
+    return [];
+  }
 }
 
 /** Get a specific workout by ID */

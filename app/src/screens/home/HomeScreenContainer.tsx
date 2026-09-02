@@ -14,8 +14,8 @@ import {
   getFoodLog,
   sumDay,
   getWorkoutHistory,
-  getCommunityWorkouts,
   getFriends,
+  getFriendWorkouts,
   getTrainingNowMembers,
   todayISO,
   subscribeToNotifications,
@@ -81,37 +81,28 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
       // User's own workout history
       const myWorkouts = await getWorkoutHistory(profile.id, 10);
       
-      // Friends' activity. A user's own workouts are owner-only in
-      // firestore.rules, so the readable copy of a friend's session is what
-      // they shared into a community we're both in — filtered down to actual
-      // friends, because this feed is me and my friends, not my communities.
+      // Friends' activity, read straight from their own workouts — they're
+      // shared with friends unless they said otherwise (see firestore.rules).
       const friends = await getFriends(profile.id);
-      const friendIds = new Set(friends.map((f) => f.friendId));
-
-      const friendWorkoutsList: any[] = [];
-      if (friendIds.size > 0 && profile.communityIds && profile.communityIds.length > 0) {
-        const results = await Promise.all(
-          profile.communityIds.map((cid) => getCommunityWorkouts(cid, 10))
-        );
-        const seen = new Set<string>(); // the same post can arrive from several communities
-        results.flat().forEach((post) => {
-          if (!friendIds.has(post.authorId) || seen.has(post.id)) return;
-          seen.add(post.id);
-          friendWorkoutsList.push({
-            id: post.id,
-            creatorName: post.authorName,
-            title: post.workoutName || 'Shared Workout',
-            notes: '',
-            mode: post.sessionType || 'solo',
-            durationMinutes: post.durationMinutes || 45,
-            totalSets: post.prCount || 0, // Fallback placeholder logic for sets
-            volumeKg: post.totalVolumeKg || 0,
-            displayDate: new Date(post.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
-            createdAt: post.createdAt,
-            partnerNames: post.partnerNames || [],
-          });
-        });
-      }
+      const friendFeeds = await Promise.all(
+        friends.map(async (f) => {
+          const workouts = await getFriendWorkouts(f.friendId, 10);
+          return workouts.map((w) => ({
+            id: w.id,
+            creatorName: f.name,
+            title: w.planName || 'Workout Session',
+            notes: w.notes || '',
+            mode: w.workoutType || (w.sessionId ? 'duo' : 'solo'),
+            durationMinutes: w.durationMinutes || 45,
+            totalSets: w.entries.reduce((sum, entry) => sum + entry.sets.length, 0),
+            volumeKg: w.totalVolumeKg || 0,
+            displayDate: new Date(w.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+            createdAt: w.createdAt,
+            partnerNames: w.duoPartnerName ? [w.duoPartnerName] : [],
+          }));
+        }),
+      );
+      const friendWorkoutsList = friendFeeds.flat();
 
       // Map user's workouts to the UI representation
       const mappedMyWorkouts = myWorkouts.map((w) => ({
