@@ -29,6 +29,7 @@ import {
   logFood, setNutritionTargets, sumDay, sumMicros, todayISO, addDays, fromISODate,
   seedFoodDatabase, searchFoods, createCustomFood, getCustomFoods,
   getRecentFoods, getFrequentFoods, getFavoriteFoods, toggleFavoriteFood,
+  updateCustomFood, deleteCustomFood,
   getWater, setWater, suggestWaterTarget, getFoodLogRange,
   saveMeal, getSavedMeals, deleteSavedMeal, logSavedMeal, copyMealFromDate
 } from '../../services/index';
@@ -274,6 +275,8 @@ export default function NutritionScreen() {
   
   // Custom Food Form State
   const [showCustomModal, setShowCustomModal] = useState(false);
+  // Set when the custom-food form is editing an existing one rather than creating.
+  const [editingCustomFood, setEditingCustomFood] = useState<FoodProduct | null>(null);
   const [customName, setCustomName] = useState('');
   const [customBrand, setCustomBrand] = useState('');
   const [customSize, setCustomSize] = useState('100');
@@ -718,13 +721,32 @@ export default function NutritionScreen() {
   };
 
   // ── Custom Food Handler ───────────────────────────────────────────────────
+  const resetCustomForm = () => {
+    setCustomName(''); setCustomBrand(''); setCustomSize('100'); setCustomUnit('g');
+    setCustomCal(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
+    setEditingCustomFood(null);
+  };
+
+  /** Open the form on an existing food so it can be corrected. */
+  const openEditCustomFood = (food: FoodProduct) => {
+    setEditingCustomFood(food);
+    setCustomName(food.name);
+    setCustomBrand(food.brand && food.brand !== 'Custom Brand' ? food.brand : '');
+    setCustomSize(String(food.servingSize));
+    setCustomUnit(food.servingUnit);
+    setCustomCal(String(food.calories));
+    setCustomProtein(String(food.protein));
+    setCustomCarbs(String(food.carbs));
+    setCustomFat(String(food.fat));
+    setShowCustomModal(true);
+  };
+
   const handleSaveCustomFood = async () => {
     const uid = currentUserId();
     if (!uid) return;
     if (!customName.trim()) return Alert.alert('Name required', 'Enter a product name.');
 
-    setLoading(true);
-    await createCustomFood(uid, {
+    const data = {
       name: customName,
       normalizedName: customName.trim().toLowerCase(),
       brand: customBrand || 'Custom Brand',
@@ -734,12 +756,37 @@ export default function NutritionScreen() {
       protein: parseFloat(customProtein) || 0,
       carbs: parseFloat(customCarbs) || 0,
       fat: parseFloat(customFat) || 0,
-    });
-    setCustomName(''); setCustomBrand(''); setCustomCal(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
+    };
+
+    setLoading(true);
+    // Editing only changes the food itself — anything already logged from it
+    // keeps the numbers it was logged with.
+    if (editingCustomFood) await updateCustomFood(uid, editingCustomFood.id, data);
+    else await createCustomFood(uid, data);
+
+    resetCustomForm();
     setShowCustomModal(false);
     await loadSearchTabsData();
     setSearchTab('my_foods');
     setLoading(false);
+  };
+
+  const handleDeleteCustomFood = (food: FoodProduct) => {
+    Alert.alert('Delete food', `Remove "${food.name}" from My Foods?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const uid = currentUserId();
+          if (!uid) return;
+          await deleteCustomFood(uid, food.id);
+          resetCustomForm();
+          setShowCustomModal(false);
+          await loadSearchTabsData();
+        },
+      },
+    ]);
   };
 
   // ── Delete Handler ──────────────────────────────────────────────────────────
@@ -1321,7 +1368,7 @@ export default function NutritionScreen() {
                 variant="outline" 
                 label="Create Custom Food" 
                 style={{ marginBottom: spacing.md }} 
-                onPress={() => setShowCustomModal(true)}
+                onPress={() => { resetCustomForm(); setShowCustomModal(true); }}
               />
             ) : null
           }
@@ -1366,6 +1413,15 @@ export default function NutritionScreen() {
                   {item.protein}P • {item.carbs}C • {item.fat}F
                 </Typography>
               </View>
+              {searchTab === 'my_foods' && (
+                <TouchableOpacity
+                  style={styles.editFoodBtn}
+                  onPress={() => openEditCustomFood(item)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Edit2 size={16} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
           )}
         />
@@ -1376,8 +1432,8 @@ export default function NutritionScreen() {
           <View style={styles.overlay}>
             <View style={styles.manualModal}>
               <View style={styles.manualModalHeader}>
-                <Typography variant="h2">Create Custom Food</Typography>
-                <TouchableOpacity onPress={() => setShowCustomModal(false)}>
+                <Typography variant="h2">{editingCustomFood ? 'Edit Food' : 'Create Custom Food'}</Typography>
+                <TouchableOpacity onPress={() => { resetCustomForm(); setShowCustomModal(false); }}>
                   <Typography variant="body" color={colors.textMuted}>Cancel</Typography>
                 </TouchableOpacity>
               </View>
@@ -1409,7 +1465,20 @@ export default function NutritionScreen() {
                 </View>
               </View>
 
-              <Button variant="primary" label="Save Custom Food" onPress={handleSaveCustomFood} style={{ marginTop: 16 }} />
+              <Button
+                variant="primary"
+                label={editingCustomFood ? 'Save changes' : 'Save Custom Food'}
+                onPress={handleSaveCustomFood}
+                style={{ marginTop: 16 }}
+              />
+              {editingCustomFood && (
+                <TouchableOpacity
+                  style={styles.deleteFoodBtn}
+                  onPress={() => handleDeleteCustomFood(editingCustomFood)}
+                >
+                  <Typography variant="bodyBold" color={colors.danger}>Delete this food</Typography>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </Modal>
@@ -1891,6 +1960,8 @@ const styles = StyleSheet.create({
   backBtn: { padding: spacing.xs },
   searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: radius.md, paddingHorizontal: spacing.sm, marginLeft: spacing.sm },
   searchInput: { flex: 1, color: colors.text, paddingVertical: spacing.sm, marginLeft: spacing.xs, fontSize: 16 },
+  editFoodBtn: { paddingLeft: spacing.md, paddingVertical: 4 },
+  deleteFoodBtn: { alignItems: 'center', paddingTop: 14 },
   searchTabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border },
   searchTabItem: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm },
   searchTabActive: { borderBottomWidth: 2, borderBottomColor: colors.primary },

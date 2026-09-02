@@ -401,6 +401,24 @@ export async function createCustomFood(
   return ref.id;
 }
 
+/** Edit a custom food you created. Past log entries keep their snapshot. */
+export async function updateCustomFood(
+  userId: string,
+  foodId: string,
+  food: Partial<Omit<FoodProduct, 'id' | 'createdAt' | 'source' | 'createdBy'>>,
+): Promise<void> {
+  await setDoc(
+    doc(db, 'users', userId, 'customFoods', foodId),
+    { ...food, updatedAt: Date.now() },
+    { merge: true },
+  );
+}
+
+/** Delete a custom food. Anything already logged from it is unaffected. */
+export async function deleteCustomFood(userId: string, foodId: string): Promise<void> {
+  await deleteDoc(doc(db, 'users', userId, 'customFoods', foodId));
+}
+
 /** Get all user custom foods. */
 export async function getCustomFoods(userId: string): Promise<FoodProduct[]> {
   const snap = await getDocs(collection(db, 'users', userId, 'customFoods'));

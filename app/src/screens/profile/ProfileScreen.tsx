@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import {
   Settings, Share2, TrendingUp, Award, Dumbbell, Clock, History, ChevronRight,
-  ChevronLeft, ChevronDown, ChevronUp, Camera, Target, Scale, Zap, Utensils, Activity, Calendar
+  ChevronLeft, ChevronDown, ChevronUp, Camera, Target, Scale, Zap, Utensils, Calendar
 } from 'lucide-react-native';
 import Svg, { Polyline, Rect, Line, Text as SvgText } from 'react-native-svg';
 import { colors, spacing, radius, useTheme } from '../../theme/colors';
@@ -404,7 +404,8 @@ export default function ProfileScreen() {
 
   // Responsive dimension variables
   const windowWidth = Dimensions.get('window').width;
-  const silhouetteSize = Math.floor((windowWidth - 48) / 2);
+  // screen padding (16×2) + card padding (16×2) + card border (1×2) + row gap (8)
+  const silhouetteSize = Math.floor((windowWidth - 74) / 2);
 
   const loadOverviewData = useCallback(async () => {
     const uid = currentUserId();
@@ -718,7 +719,7 @@ export default function ProfileScreen() {
                   <ActivityIndicator color={colors.primary} style={{ marginVertical: 40 }} />
                 ) : (
                   <View style={styles.bodyVizRow}>
-                    <View style={[styles.bodyVizItem, { width: silhouetteSize }]}>
+                    <View style={styles.bodyVizItem}>
                       <Text style={styles.bodyVizLabel}>ANTERIOR (FRONT)</Text>
                       <MuscleSilhouette
                         primaryMuscles={monthlyMuscles.primary}
@@ -728,7 +729,7 @@ export default function ProfileScreen() {
                         size={silhouetteSize - 16}
                       />
                     </View>
-                    <View style={[styles.bodyVizItem, { width: silhouetteSize }]}>
+                    <View style={styles.bodyVizItem}>
                       <Text style={styles.bodyVizLabel}>POSTERIOR (BACK)</Text>
                       <MuscleSilhouette
                         primaryMuscles={monthlyMuscles.primary}
@@ -859,12 +860,6 @@ export default function ProfileScreen() {
                       <Text style={styles.sectionLabel}>MUSCLES</Text>
                       <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '600' }}>
                         THIS WEEK · {currentWeekRangeText}
-                      </Text>
-                    </View>
-                    <View style={styles.recoverySummaryBadge}>
-                      <Activity size={12} color={theme.colors.primary} />
-                      <Text style={[styles.recoverySummaryText, { color: theme.colors.primary }]}>
-                        Live Recovery
                       </Text>
                     </View>
                   </View>
@@ -1254,7 +1249,7 @@ const styles = StyleSheet.create({
   monthDateRangeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
 
   bodyVizRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, paddingVertical: spacing.xs },
-  bodyVizItem: { alignItems: 'center', gap: spacing.xs },
+  bodyVizItem: { flex: 1, alignItems: 'center', gap: spacing.xs },
   bodyVizLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
 
   legendContainer: {
@@ -1320,19 +1315,6 @@ const styles = StyleSheet.create({
   },
 
   // Weekly Muscles Cards Styling
-  recoverySummaryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255,107,0,0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-  },
-  recoverySummaryText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
 
   muscleCard: {
     borderWidth: 1,
