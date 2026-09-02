@@ -423,12 +423,6 @@ export default function LogWorkoutScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Let the mini bar's Discard run this screen's own teardown. */
-  useEffect(() => {
-    activeWorkout.registerDiscard(() => { handleDiscardWorkout(); });
-    return () => activeWorkout.registerDiscard(null);
-  }, [activeWorkout, handleDiscardWorkout]);
-
   /** Back on this screen by any route (mini bar or the tab) — hide the bar. */
   useFocusEffect(
     useCallback(() => {
@@ -446,6 +440,16 @@ export default function LogWorkoutScreen({
       ]
     );
   }, [handleDiscardWorkout]);
+
+  /**
+   * Hand the mini bar our discard routine. It goes through handleBackPress so
+   * it asks "Discard Workout?" first — same confirmation as discarding from
+   * inside the logger.
+   */
+  useEffect(() => {
+    activeWorkout.registerDiscard(() => { handleBackPress(); });
+    return () => activeWorkout.registerDiscard(null);
+  }, [activeWorkout, handleBackPress]);
 
   useEffect(() => {
     const onBackPress = () => {

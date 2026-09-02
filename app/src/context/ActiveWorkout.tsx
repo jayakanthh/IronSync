@@ -41,9 +41,14 @@ export function ActiveWorkoutProvider({ children }: { children: React.ReactNode 
     setMinimized(false);
   }, []);
 
+  /**
+   * Hands off to the logger, which confirms first. Deliberately doesn't clear
+   * `minimized` — if the user cancels the confirmation the workout is still
+   * running, and the bar has to stay up or there's no way back to it.
+   * Discarding for real unmounts the logger, and `end()` clears both flags.
+   */
   const discard = useCallback(() => {
     discardRef.current?.();
-    setMinimized(false);
   }, []);
 
   const value = useMemo<ActiveWorkoutValue>(
