@@ -79,6 +79,8 @@ function MainTabs() {
           name="Community"
           component={CommunityStack} 
           options={{
+            // Route name stays "Community" — navigate('Community') is used elsewhere.
+            tabBarLabel: 'Social',
             tabBarIcon: ({ color }) => <Users size={20} color={color} />,
           }}
         />

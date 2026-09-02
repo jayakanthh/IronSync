@@ -36,6 +36,14 @@ import { mapRawToLovableMuscleId } from '../../utils/muscleHeatmap';
 import ExpandableMeasurementCard from '../../components/measurements/ExpandableMeasurementCard';
 
 type MeTab = 'overview' | 'exercises' | 'measures' | 'photos';
+
+/** Tab keys are internal; these are what you actually read on screen. */
+const ME_TAB_LABELS: Record<MeTab, string> = {
+  overview: 'Overview',
+  exercises: "PR's",
+  measures: 'Measurements',
+  photos: 'Photos',
+};
 type OverviewSubTab = 'recent' | 'muscles';
 
 // Standard 12 Muscle Taxonomy
@@ -611,32 +619,37 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: theme.colors.background }]}>
       {/* Top Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
         <View style={styles.headerUser}>
           <Avatar name={profile.displayName} size={44} />
           <View style={styles.userInfo}>
-            <Text style={styles.userName}>{profile.displayName || 'Iron Athlete'}</Text>
+            <Text style={[styles.userName, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+              {profile.displayName || 'Iron Athlete'}
+            </Text>
             {/* username is stored with a leading '@' already — don't prepend another */}
-            <Text style={styles.userSub}>{profile.username || '@athlete'}</Text>
+            <Text style={[styles.userSub, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+              {profile.username || '@athlete'}
+            </Text>
           </View>
         </View>
-        <View style={styles.profileActions}>
-          <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Settings')}>
-            <Settings size={20} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Settings')}>
+          <Settings size={20} color={theme.colors.textPrimary} />
+        </TouchableOpacity>
       </View>
 
       {/* Main Tabs */}
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, { borderBottomColor: theme.colors.border }]}>
         {(['overview', 'exercises', 'measures', 'photos'] as MeTab[]).map(t => (
           <TouchableOpacity
             key={t}
-            style={[styles.tab, activeTab === t && styles.tabActive]}
+            style={[styles.tab, activeTab === t && { borderBottomColor: theme.colors.primary }]}
             onPress={() => setActiveTab(t)}
           >
-            <Text style={[styles.tabText, activeTab === t && styles.tabTextActive]}>
-              {t.toUpperCase()}
+            <Text
+              style={[styles.tabText, { color: theme.colors.textSecondary }, activeTab === t && { color: theme.colors.primary }]}
+              numberOfLines={1}
+            >
+              {ME_TAB_LABELS[t]}
             </Text>
           </TouchableOpacity>
         ))}
@@ -1211,20 +1224,18 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  headerUser: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  userInfo: { gap: 1 },
+  headerUser: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1, marginRight: spacing.sm },
+  userInfo: { gap: 1, flex: 1 },
   userName: { color: colors.text, fontSize: 16, fontWeight: '800' },
   userSub: { color: colors.textMuted, fontSize: 12 },
-  profileActions: { flexDirection: 'row', gap: spacing.sm },
   headerIconBtn: { padding: spacing.xs },
 
-  tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.xs },
+  tabs: { flexDirection: 'row', borderBottomWidth: 1, paddingHorizontal: spacing.xs },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 14, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabActive: { borderBottomColor: colors.primary },
-  tabText: { color: colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-  tabTextActive: { color: colors.primary },
+  tabText: { fontSize: 13, fontWeight: '700' },
 
-  tabContent: { padding: spacing.md, gap: spacing.md },
+  // The tab bar is an absolute overlay — without this the last card hides behind it.
+  tabContent: { padding: spacing.md, gap: spacing.md, paddingBottom: 110 },
 
   sectionLabel: { color: colors.text, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
 
@@ -1433,7 +1444,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, paddingVertical: 11, color: colors.text, fontSize: 15 },
 
   // Premium Exercise Cards (1RM & mini progress line)
-  exercisePremiumCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: 12, marginBottom: spacing.sm },
+  exercisePremiumCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: 12 },
   exCardTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   exThumbnail: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: 'rgba(72,187,149,0.15)', alignItems: 'center', justifyContent: 'center' },
   exThumbText: { color: colors.primary, fontSize: 13, fontWeight: '800' },
