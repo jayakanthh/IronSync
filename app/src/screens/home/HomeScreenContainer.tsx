@@ -15,6 +15,7 @@ import {
   sumDay,
   getWorkoutHistory,
   getCommunityWorkouts,
+  getFriends,
   getTrainingNowMembers,
   todayISO,
   subscribeToNotifications,
@@ -80,29 +81,35 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
       // User's own workout history
       const myWorkouts = await getWorkoutHistory(profile.id, 10);
       
-      // Community shared workouts (respecting visibility rules)
-      const communityWorkoutsList: any[] = [];
-      if (profile.communityIds && profile.communityIds.length > 0) {
+      // Friends' activity. A user's own workouts are owner-only in
+      // firestore.rules, so the readable copy of a friend's session is what
+      // they shared into a community we're both in — filtered down to actual
+      // friends, because this feed is me and my friends, not my communities.
+      const friends = await getFriends(profile.id);
+      const friendIds = new Set(friends.map((f) => f.friendId));
+
+      const friendWorkoutsList: any[] = [];
+      if (friendIds.size > 0 && profile.communityIds && profile.communityIds.length > 0) {
         const results = await Promise.all(
           profile.communityIds.map((cid) => getCommunityWorkouts(cid, 10))
         );
+        const seen = new Set<string>(); // the same post can arrive from several communities
         results.flat().forEach((post) => {
-          // Check if workout is not private and author is not already me (to avoid duplication)
-          if (post.authorId !== profile.id) {
-            communityWorkoutsList.push({
-              id: post.id,
-              creatorName: post.authorName,
-              title: post.workoutName || 'Shared Workout',
-              notes: '',
-              mode: post.sessionType || 'solo',
-              durationMinutes: post.durationMinutes || 45,
-              totalSets: post.prCount || 0, // Fallback placeholder logic for sets
-              volumeKg: post.totalVolumeKg || 0,
-              displayDate: new Date(post.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
-              createdAt: post.createdAt,
-              partnerNames: post.partnerNames || [],
-            });
-          }
+          if (!friendIds.has(post.authorId) || seen.has(post.id)) return;
+          seen.add(post.id);
+          friendWorkoutsList.push({
+            id: post.id,
+            creatorName: post.authorName,
+            title: post.workoutName || 'Shared Workout',
+            notes: '',
+            mode: post.sessionType || 'solo',
+            durationMinutes: post.durationMinutes || 45,
+            totalSets: post.prCount || 0, // Fallback placeholder logic for sets
+            volumeKg: post.totalVolumeKg || 0,
+            displayDate: new Date(post.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+            createdAt: post.createdAt,
+            partnerNames: post.partnerNames || [],
+          });
         });
       }
 
@@ -122,7 +129,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
       }));
 
       // Combine and sort by date descending
-      const combined = [...mappedMyWorkouts, ...communityWorkoutsList].sort(
+      const combined = [...mappedMyWorkouts, ...friendWorkoutsList].sort(
         (a, b) => b.createdAt - a.createdAt
       );
       setWorkoutsList(combined);
