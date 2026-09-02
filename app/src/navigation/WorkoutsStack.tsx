@@ -11,24 +11,28 @@ const Stack = createNativeStackNavigator();
 /** Workouts tab as a stack so "Create"/"Adopt" can push full-screen flows. */
 export default function WorkoutsStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
       <Stack.Screen name="WorkoutsHome" component={WorkoutsScreen} />
       <Stack.Screen
         name="PlanBuilder"
         component={PlanBuilderScreen}
-        options={{ presentation: 'modal' }}
+        options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
       />
       <Stack.Screen
         name="AdoptPlan"
         component={AdoptPlanScreen}
-        options={{ presentation: 'modal' }}
+        options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
       />
       <Stack.Screen name="RoutinePreview" component={RoutinePreviewScreen} />
       {/* Deliberately NOT presentation: 'modal'. A modal sits above the tab
           navigator, so minimising (switching tabs) couldn't reveal anything
           underneath it. The tab bar is hidden for this route instead — see
           RootNavigator. */}
-      <Stack.Screen name="LogWorkout" component={LogWorkoutScreen} />
+      <Stack.Screen
+        name="LogWorkout"
+        component={LogWorkoutScreen}
+        options={{ animation: 'slide_from_bottom' }}
+      />
       <Stack.Screen
         name="ProgressAnalytics"
         component={ProgressAnalyticsScreen}

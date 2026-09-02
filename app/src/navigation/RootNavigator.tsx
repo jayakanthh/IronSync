@@ -39,6 +39,8 @@ function MainTabs() {
       <Tab.Navigator
         screenOptions={{
           headerShown: false,
+          // Tab switches used to cut instantly.
+          animation: 'shift',
           tabBarActiveTintColor: theme.colors.primary,
           tabBarInactiveTintColor: theme.colors.textSecondary,
           tabBarStyle: [styles.tabBar, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border }],
@@ -116,26 +118,26 @@ export default function RootNavigator() {
 
   return (
     <NavigationContainer ref={navigationRef} theme={navTheme}>
-      <RootStack.Navigator screenOptions={{ headerShown: false }}>
+      <RootStack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
         <RootStack.Screen name="MainTabs" component={MainTabs} />
         
         {/* Full-screen / Modal flow screens */}
-        <RootStack.Screen name="Nutrition" component={NutritionScreen} options={{ presentation: 'modal' }} />
-        <RootStack.Screen name="Progress" component={ProgressAnalyticsScreen} options={{ presentation: 'modal' }} />
-        <RootStack.Screen name="Notifications" component={NotificationsModal} options={{ presentation: 'modal' }} />
-        <RootStack.Screen name="StrengthPR" component={StrengthPRScreen} options={{ presentation: 'modal' }} />
-        <RootStack.Screen name="Streak" component={StreakScreen} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="Nutrition" component={NutritionScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <RootStack.Screen name="Progress" component={ProgressAnalyticsScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <RootStack.Screen name="Notifications" component={NotificationsModal} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <RootStack.Screen name="StrengthPR" component={StrengthPRScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        <RootStack.Screen name="Streak" component={StreakScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <RootStack.Screen name="UserProfile" component={UserProfileScreen} />
-        <RootStack.Screen name="AddFriends" component={AddFriendsScreen} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="AddFriends" component={AddFriendsScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <RootStack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} />
         <RootStack.Screen name="ExerciseDetail" component={ExerciseDetailScreen} />
 
         
         {/* Duo Workout Stack — single entry point, internal screens navigate within */}
-        <RootStack.Screen name="DuoStack" component={DuoStack} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="DuoStack" component={DuoStack} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         
         {/* Group Workout Screens */}
-        <RootStack.Screen name="GroupLobby" component={GroupWorkoutLobbyScreen} options={{ presentation: 'modal' }} />
+        <RootStack.Screen name="GroupLobby" component={GroupWorkoutLobbyScreen} options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         <RootStack.Screen name="GroupWorkout" component={GroupWorkoutScreen} />
       </RootStack.Navigator>
     </NavigationContainer>

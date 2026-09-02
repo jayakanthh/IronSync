@@ -21,6 +21,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../theme/colors';
 import { Card } from '../../components/ui/Card';
+import AnimatedRing from '../../components/ui/AnimatedRing';
+import AnimatedBar from '../../components/ui/AnimatedBar';
 import { Button } from '../../components/ui/Button';
 import { Typography } from '../../components/ui/Typography';
 import type { FoodLogEntry, Goal, Meal, NutritionTargets, FoodProduct, SavedMeal } from '../../models/index';
@@ -100,13 +102,13 @@ function CircularProgress({ percent, color, size = 96, strokeWidth = 9 }: {
   return (
     <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
       <Circle cx={cx} cy={cy} r={r} stroke={colors.surfaceAlt} strokeWidth={strokeWidth} fill="none" />
-      <Circle
-        cx={cx} cy={cy} r={r}
-        stroke={color} strokeWidth={strokeWidth}
-        fill="none"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        strokeLinecap="round"
+      <AnimatedRing
+        cx={cx}
+        cy={cy}
+        r={r}
+        color={color}
+        strokeWidth={strokeWidth}
+        progress={Math.min(percent, 100) / 100}
       />
     </Svg>
   );
@@ -146,10 +148,15 @@ function MacroRings({ totals, targets, size = 172 }: {
           return (
             <React.Fragment key={i}>
               <Circle cx={c} cy={c} r={radius} stroke={r.color + '26'} strokeWidth={strokeWidth} fill="none" />
-              <Circle
-                cx={c} cy={c} r={radius}
-                stroke={r.color} strokeWidth={strokeWidth} fill="none"
-                strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)} strokeLinecap="round"
+              {/* Staggered so the rings fill one after another, not all at once. */}
+              <AnimatedRing
+                cx={c}
+                cy={c}
+                r={radius}
+                color={r.color}
+                strokeWidth={strokeWidth}
+                progress={pct}
+                delay={i * 90}
               />
             </React.Fragment>
           );
@@ -1078,7 +1085,7 @@ export default function NutritionScreen() {
                   {waterMl} / {waterTarget} ml
                 </Typography>
                 <View style={styles.waterBarWrap}>
-                  <View style={[styles.waterBarFill, { width: `${waterPercent}%` as any }]} />
+                  <AnimatedBar percent={waterPercent} color="#3b82f6" style={styles.waterBarFill} />
                 </View>
               </View>
               <View style={styles.waterBtns}>
@@ -1707,7 +1714,7 @@ function MacroBar({ label, consumed, target, percent, color }: {
         </Typography>
       </View>
       <View style={macroBarStyles.track}>
-        <View style={[macroBarStyles.fill, { width: `${percent}%` as any, backgroundColor: color }]} />
+        <AnimatedBar percent={percent} color={color} style={macroBarStyles.fill} />
       </View>
     </View>
   );

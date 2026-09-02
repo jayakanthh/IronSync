@@ -29,7 +29,7 @@ const Stack = createNativeStackNavigator<MeStackParamList>();
 
 export default function MeStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Measurements" component={MeasurementsScreen} />
       <Stack.Screen name="GoalSetup" component={GoalSetupScreen} />
