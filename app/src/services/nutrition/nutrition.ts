@@ -12,7 +12,7 @@ import {
   orderBy,
   writeBatch,
 } from 'firebase/firestore';
-import type { FoodLogEntry, NutritionTargets, FoodProduct, SavedMeal, SavedMealItem } from '../../models/index';
+import type { FoodLogEntry, NutritionTargets, FoodProduct, SavedMeal, SavedMealItem, WaterPrefs } from '../../models/index';
 import { db } from '../../config/firebase';
 
 const targetsRef = (userId: string) =>
@@ -114,6 +114,21 @@ export async function getWater(userId: string, date: string): Promise<number> {
 /** Overwrite a day's water intake. Never goes negative. */
 export async function setWater(userId: string, date: string, ml: number): Promise<void> {
   await setDoc(waterRef(userId, date), { date, ml: Math.max(0, Math.round(ml)), updatedAt: Date.now() });
+}
+
+const waterPrefsRef = (userId: string) => doc(db, 'users', userId, 'meta', 'waterPrefs');
+
+/** The user's own water target and quick-add size, or null if never set. */
+export async function getWaterPrefs(userId: string): Promise<WaterPrefs | null> {
+  const snap = await getDoc(waterPrefsRef(userId));
+  return snap.exists() ? (snap.data() as WaterPrefs) : null;
+}
+
+export async function setWaterPrefs(userId: string, prefs: WaterPrefs): Promise<void> {
+  await setDoc(waterPrefsRef(userId), {
+    targetMl: Math.max(100, Math.round(prefs.targetMl)),
+    incrementMl: Math.max(10, Math.round(prefs.incrementMl)),
+  });
 }
 
 /**

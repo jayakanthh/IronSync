@@ -32,7 +32,7 @@ import {
   seedFoodDatabase, searchFoods, createCustomFood, getCustomFoods,
   getRecentFoods, getFrequentFoods, getFavoriteFoods, toggleFavoriteFood,
   updateCustomFood, deleteCustomFood,
-  getWater, setWater, suggestWaterTarget, getFoodLogRange,
+  getWater, setWater, suggestWaterTarget, getWaterPrefs, setWaterPrefs, getFoodLogRange,
   saveMeal, getSavedMeals, deleteSavedMeal, logSavedMeal, copyMealFromDate
 } from '../../services/index';
 import { useCurrentUser } from '../../context/CurrentUser';
@@ -301,7 +301,10 @@ export default function NutritionScreen() {
 
   // Water local state
   const [waterMl, setWaterMl] = useState(0);
-  const waterTarget = suggestWaterTarget((profile as any)?.weightKg);
+  const [waterTarget, setWaterTarget] = useState(() => suggestWaterTarget((profile as any)?.weightKg));
+  const [waterStep, setWaterStep] = useState(250);
+  const [showWaterSettings, setShowWaterSettings] = useState(false);
+  const [waterForm, setWaterForm] = useState({ target: '', step: '' });
 
   // ── Saved meals ("my usual breakfast") ────────────────────────────────────
   const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
@@ -324,14 +327,18 @@ export default function NutritionScreen() {
     const uid = currentUserId();
     if (!uid) { setLoading(false); return; }
 
-    const [t, entries, water, meals] = await Promise.all([
+    const [t, entries, water, meals, waterPrefs] = await Promise.all([
       getNutritionTargets(uid),
       getFoodLog(uid, selectedDate),
       getWater(uid, selectedDate),
       getSavedMeals(uid),
+      getWaterPrefs(uid),
     ]);
     setWaterMl(water);
     setSavedMeals(meals);
+    // Fall back to the bodyweight estimate until they set their own.
+    setWaterTarget(waterPrefs?.targetMl || suggestWaterTarget((profile as any)?.weightKg));
+    setWaterStep(waterPrefs?.incrementMl || 250);
 
     const goal = (profile as any)?.goal as Goal | undefined;
     const weightKg = (profile as any)?.weightKg;
@@ -490,6 +497,29 @@ export default function NutritionScreen() {
   const carbsPercent = Math.min(100, Math.round((totals.carbsG / t.carbsG) * 100)) || 0;
   const fatPercent = Math.min(100, Math.round((totals.fatG / t.fatG) * 100)) || 0;
   const waterPercent = Math.min(100, Math.round((waterMl / waterTarget) * 100));
+
+  const openWaterSettings = () => {
+    setWaterForm({ target: String(waterTarget), step: String(waterStep) });
+    setShowWaterSettings(true);
+  };
+
+  const handleSaveWaterPrefs = async () => {
+    const uid = currentUserId();
+    if (!uid) return;
+    const target = parseInt(waterForm.target, 10);
+    const step = parseInt(waterForm.step, 10);
+    if (!target || target < 100) return Alert.alert('Check the target', 'Enter a daily target of at least 100ml.');
+    if (!step || step < 10) return Alert.alert('Check the amount', 'Enter a quick-add amount of at least 10ml.');
+
+    setWaterTarget(target);
+    setWaterStep(step);
+    setShowWaterSettings(false);
+    try {
+      await setWaterPrefs(uid, { targetMl: target, incrementMl: step });
+    } catch {
+      Alert.alert('Could not save', 'Your water settings did not save. Try again.');
+    }
+  };
 
   /** Water writes straight through — optimistic locally, saved per day. */
   const adjustWater = async (deltaMl: number) => {
@@ -1079,7 +1109,7 @@ export default function NutritionScreen() {
 
             {/* Water Tracker */}
             <View style={styles.waterRow}>
-              <View style={styles.waterLeft}>
+              <TouchableOpacity style={styles.waterLeft} onPress={openWaterSettings} activeOpacity={0.7}>
                 <Droplets size={16} color="#3b82f6" />
                 <Typography variant="bodyBold" color="#3b82f6" style={{ fontSize: 12 }}>
                   {waterMl} / {waterTarget} ml
@@ -1087,17 +1117,17 @@ export default function NutritionScreen() {
                 <View style={styles.waterBarWrap}>
                   <AnimatedBar percent={waterPercent} color="#3b82f6" style={styles.waterBarFill} />
                 </View>
-              </View>
+              </TouchableOpacity>
               <View style={styles.waterBtns}>
                 <TouchableOpacity
                   style={[styles.waterBtn, waterMl === 0 && styles.waterBtnDisabled]}
-                  onPress={() => adjustWater(-250)}
+                  onPress={() => adjustWater(-waterStep)}
                   disabled={waterMl === 0}
                 >
                   <Minus size={12} color="#3b82f6" />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.waterBtn} onPress={() => adjustWater(250)}>
-                  <Typography variant="caption" color="#3b82f6" style={{ fontSize: 10 }}>+250ml</Typography>
+                <TouchableOpacity style={styles.waterBtn} onPress={() => adjustWater(waterStep)}>
+                  <Typography variant="caption" color="#3b82f6" style={{ fontSize: 10 }}>+{waterStep}ml</Typography>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1184,6 +1214,50 @@ export default function NutritionScreen() {
             );
           })}
         </ScrollView>
+
+        {/* Water target and quick-add size. */}
+        <Modal visible={showWaterSettings} transparent animationType="slide" onRequestClose={() => setShowWaterSettings(false)}>
+          <View style={styles.overlay}>
+            <View style={styles.manualModal}>
+              <View style={styles.manualModalHeader}>
+                <Typography variant="h2">Water</Typography>
+                <TouchableOpacity onPress={() => setShowWaterSettings(false)}>
+                  <Typography variant="body" color={colors.textMuted}>Cancel</Typography>
+                </TouchableOpacity>
+              </View>
+
+              <Typography variant="caption" color={colors.textMuted} style={{ marginBottom: 6 }}>
+                DAILY TARGET (ML)
+              </Typography>
+              <TextInput
+                style={styles.manualInput}
+                keyboardType="number-pad"
+                placeholder="2500"
+                placeholderTextColor={colors.textMuted}
+                value={waterForm.target}
+                onChangeText={(v) => setWaterForm((f) => ({ ...f, target: v }))}
+              />
+
+              <Typography variant="caption" color={colors.textMuted} style={{ marginBottom: 6 }}>
+                ONE TAP ADDS (ML)
+              </Typography>
+              <TextInput
+                style={styles.manualInput}
+                keyboardType="number-pad"
+                placeholder="250"
+                placeholderTextColor={colors.textMuted}
+                value={waterForm.step}
+                onChangeText={(v) => setWaterForm((f) => ({ ...f, step: v }))}
+              />
+
+              <Typography variant="caption" color={colors.textMuted}>
+                Suggested for your bodyweight: {suggestWaterTarget((profile as any)?.weightKg)}ml.
+              </Typography>
+
+              <Button variant="primary" label="Save" onPress={handleSaveWaterPrefs} style={{ marginTop: 16 }} />
+            </View>
+          </View>
+        </Modal>
 
         {/* Month grid — pick any past day; dots mark the days you logged food. */}
         <Modal visible={showCalendar} transparent animationType="fade" onRequestClose={() => setShowCalendar(false)}>

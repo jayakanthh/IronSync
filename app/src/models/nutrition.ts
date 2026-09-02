@@ -83,6 +83,12 @@ export interface SavedMeal {
   createdAt: number;
 }
 
+/** How much water you're aiming for, and the size of one tap. */
+export interface WaterPrefs {
+  targetMl: number;
+  incrementMl: number;
+}
+
 /** A day's water intake, in millilitres. */
 export interface WaterLog {
   date: string; // YYYY-MM-DD
