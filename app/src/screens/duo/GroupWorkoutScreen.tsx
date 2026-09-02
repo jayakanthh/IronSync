@@ -126,7 +126,9 @@ export default function GroupWorkoutScreen() {
           if (!profile || !session) return;
           try {
             await finishMyWorkout(sessionId, profile.id, session);
-            navigation.replace('DuoComplete', { sessionId });
+            // DuoComplete lives inside DuoStack; this screen is on the root
+            // stack, so it has to be addressed through its navigator.
+            navigation.replace('DuoStack', { screen: 'DuoComplete', params: { sessionId } });
           } catch (e) {
             console.error(e);
           }

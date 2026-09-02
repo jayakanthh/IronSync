@@ -1117,7 +1117,7 @@ export default function ProfileScreen() {
                   </View>
                 </View>
               ) : (
-                <TouchableOpacity style={styles.createGoalRowBtn} onPress={() => navigation.navigate('GoalSettings')}>
+                <TouchableOpacity style={styles.createGoalRowBtn} onPress={() => navigation.navigate('GoalSetup')}>
                   <Target size={16} color={colors.primary} />
                   <Text style={styles.createGoalRowText}>Set a target weight goal</Text>
                   <ChevronRight size={14} color={colors.primary} />
@@ -1142,7 +1142,7 @@ export default function ProfileScreen() {
                       onToggle={() => {
                         setExpandedMeasurement((prev) => (prev === t.type ? null : t.type));
                       }}
-                      onSetGoal={() => navigation.navigate('GoalSettings')}
+                      onSetGoal={() => navigation.navigate('GoalSetup')}
                     />
                   );
                 })}

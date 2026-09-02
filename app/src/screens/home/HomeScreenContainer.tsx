@@ -199,7 +199,9 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
         <TopHeader
           user={user}
           unreadNotifsCount={unreadNotifsCount}
-          onAvatarPress={() => navigation.navigate('Profile')}
+          // Profile is a screen inside the Me tab's stack, not a route the
+          // Home tab can reach directly.
+          onAvatarPress={() => navigation.navigate('Me', { screen: 'Profile' })}
           onNotificationPress={() => navigation.navigate('Notifications')}
           onOpenStreak={() => navigation.navigate('Streak')}
           onOpenStrengthPR={() => navigation.navigate('StrengthPR')}

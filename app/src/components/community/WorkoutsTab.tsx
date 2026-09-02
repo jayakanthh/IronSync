@@ -92,13 +92,13 @@ function CommunityPostCard({
 
         {/* Stats box */}
         <View style={styles.statsRow}>
-          {post.durationMinutes && (
+          {!!post.durationMinutes && (
             <View style={styles.statBox}>
               <Typography variant="bodyBold">{post.durationMinutes}m</Typography>
               <Typography variant="caption" color={colors.textMuted}>Duration</Typography>
             </View>
           )}
-          {post.totalVolumeKg && (
+          {!!post.totalVolumeKg && (
             <View style={styles.statBox}>
               <Typography variant="bodyBold">{post.totalVolumeKg.toLocaleString()} kg</Typography>
               <Typography variant="caption" color={colors.textMuted}>Volume</Typography>
