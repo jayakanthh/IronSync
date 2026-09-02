@@ -1,6 +1,7 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -13,6 +14,7 @@ import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { ArrowLeft, Dumbbell, Play, Pencil } from 'lucide-react-native';
 import { spacing, radius, useTheme } from '../../theme/colors';
 import { getPlan, getExercisesByIds } from '../../services/index';
+import { useActiveWorkout } from '../../context/ActiveWorkout';
 import type { Plan, Exercise } from '../../models/index';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -35,6 +37,7 @@ export default function RoutinePreviewScreen({
 }) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const { active } = useActiveWorkout();
   // The tab bar is an absolute overlay, so nothing anchored to the bottom of a
   // tab screen is visible until it clears the bar's real height.
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? insets.bottom + 49;
@@ -82,6 +85,21 @@ export default function RoutinePreviewScreen({
 
   const handleStart = useCallback(() => {
     if (!plan || !day) return;
+
+    // One at a time: starting a second would silently drop you back into the
+    // first, since the logger keeps its session while minimised.
+    if (active) {
+      Alert.alert(
+        'Workout already running',
+        `"${active.label}" is still in progress. Finish or discard it before starting another.`,
+        [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Resume it', onPress: () => navigation.navigate('LogWorkout') },
+        ],
+      );
+      return;
+    }
+
     navigation.navigate('LogWorkout', {
       exercises: day.exercises.map((e) => ({
         exerciseId: e.exerciseId,
@@ -91,7 +109,7 @@ export default function RoutinePreviewScreen({
       })),
       sourceLabel: plan.days.length > 1 ? `${plan.name} — ${day.label}` : plan.name,
     });
-  }, [plan, day, exById, navigation]);
+  }, [plan, day, exById, navigation, active]);
 
   if (loading) {
     return (

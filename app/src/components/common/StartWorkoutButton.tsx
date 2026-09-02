@@ -3,6 +3,7 @@ import { Animated, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, Text, To
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Play } from 'lucide-react-native';
 import { useTheme } from '../../theme/colors';
+import { useActiveWorkout } from '../../context/ActiveWorkout';
 
 /**
  * Floating "Start New Workout" pill, shown on Home & Workouts. Tapping it starts
@@ -90,6 +91,7 @@ export default function StartWorkoutButton({ onPress }: { onPress: () => void })
   const { themeMode } = useTheme();
   const insets = useSafeAreaInsets();
   const hidden = useContext(StartWorkoutScrollContext)?.hidden;
+  const { active } = useActiveWorkout();
   // Sit just above the (absolute, overlaid) tab bar: its ~49pt bar + bottom inset.
   const bottom = insets.bottom + 58;
 
@@ -101,6 +103,9 @@ export default function StartWorkoutButton({ onPress }: { onPress: () => void })
         ],
       }
     : null;
+
+  // One workout at a time: while one is running the mini bar owns this space.
+  if (active) return null;
 
   return (
     <Animated.View style={[styles.wrap, { bottom }, animatedStyle]} pointerEvents="box-none">

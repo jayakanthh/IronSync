@@ -15,6 +15,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import {
@@ -68,6 +69,7 @@ import {
 } from '../../services/index';
 import { useCurrentUser } from '../../context/CurrentUser';
 import SwipeToDelete from '../../components/common/SwipeToDelete';
+import { useActiveWorkout } from '../../context/ActiveWorkout';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
 
 import {
@@ -129,6 +131,7 @@ export default function LogWorkoutScreen({
   };
 }) {
   const { refresh, profile } = useCurrentUser();
+  const activeWorkout = useActiveWorkout();
   const insets = useSafeAreaInsets();
 
   const buildInitialItems = useCallback((): LoggedExercise[] => {
@@ -397,6 +400,41 @@ export default function LogWorkoutScreen({
     setItems([]);
     dismiss();
   }, [profile, dismiss]);
+
+  /**
+   * Step away without losing the session: switch to another tab. This screen
+   * stays mounted on the Workouts stack, so the timer, sets and everything
+   * else survive; the mini bar offers Resume and Discard from wherever you go.
+   */
+  const handleMinimize = useCallback(() => {
+    activeWorkout.minimize();
+    const parent = (navigation as any).getParent?.();
+    if (parent) parent.navigate('Home');
+  }, [activeWorkout, navigation]);
+
+  /**
+   * Tell the rest of the app a workout is running: it powers the mini bar and
+   * hides "Start New Workout" while this is open. Unmounting means the session
+   * is genuinely over (finished or discarded) — minimising keeps us mounted.
+   */
+  useEffect(() => {
+    activeWorkout.begin(route?.params?.sourceLabel || 'Workout');
+    return () => activeWorkout.end();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Let the mini bar's Discard run this screen's own teardown. */
+  useEffect(() => {
+    activeWorkout.registerDiscard(() => { handleDiscardWorkout(); });
+    return () => activeWorkout.registerDiscard(null);
+  }, [activeWorkout, handleDiscardWorkout]);
+
+  /** Back on this screen by any route (mini bar or the tab) — hide the bar. */
+  useFocusEffect(
+    useCallback(() => {
+      activeWorkout.restore();
+    }, [activeWorkout]),
+  );
 
   const handleBackPress = useCallback(() => {
     Alert.alert(
@@ -1088,8 +1126,8 @@ export default function LogWorkoutScreen({
     <SafeAreaView edges={['top']} style={styles.screen}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleBackPress} style={styles.closeBtn}>
-          <X size={22} color={colors.text} />
+        <TouchableOpacity onPress={handleMinimize} style={styles.closeBtn}>
+          <ChevronDown size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.timerRow}>
           <Typography variant="bodyBold" style={styles.timerText}>{formatTimer(elapsedSeconds)}</Typography>

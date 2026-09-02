@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { CurrentUserProvider } from './src/context/CurrentUser';
+import { ActiveWorkoutProvider } from './src/context/ActiveWorkout';
 import AuthGate from './src/components/common/AuthGate';
 import RootNavigator from './src/navigation/RootNavigator';
 import { ThemeProvider, useTheme } from './src/theme/colors';
@@ -26,7 +27,9 @@ export default function App() {
     <ThemeProvider>
       <SafeAreaProvider>
         <CurrentUserProvider>
-          <AppContent />
+          <ActiveWorkoutProvider>
+            <AppContent />
+          </ActiveWorkoutProvider>
         </CurrentUserProvider>
       </SafeAreaProvider>
     </ThemeProvider>

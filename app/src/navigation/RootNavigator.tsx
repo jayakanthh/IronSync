@@ -6,6 +6,7 @@ import { View, TouchableOpacity, StyleSheet, Modal, Text } from 'react-native';
 import { Home, Dumbbell, Users, Utensils, Plus, X, Award, TrendingUp, User, Calendar } from 'lucide-react-native';
 import { colors, radius, useTheme } from '../theme/colors';
 import { Typography } from '../components/ui/Typography';
+import MiniWorkoutBar from '../components/common/MiniWorkoutBar';
 
 import HomeScreenContainer from '../screens/home/HomeScreenContainer';
 import WorkoutsStack from './WorkoutsStack';
@@ -84,6 +85,9 @@ function MainTabs() {
           }}
         />
       </Tab.Navigator>
+
+      {/* Sits above the tab bar whenever a workout has been minimised. */}
+      <MiniWorkoutBar />
     </View>
   );
 }
