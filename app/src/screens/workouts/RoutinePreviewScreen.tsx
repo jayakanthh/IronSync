@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { ArrowLeft, Dumbbell, Play, Pencil } from 'lucide-react-native';
 import { spacing, radius, useTheme } from '../../theme/colors';
 import { getPlan, getExercisesByIds } from '../../services/index';
@@ -34,6 +35,9 @@ export default function RoutinePreviewScreen({
 }) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  // The tab bar is an absolute overlay, so nothing anchored to the bottom of a
+  // tab screen is visible until it clears the bar's real height.
+  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? insets.bottom + 49;
   const planId = route?.params?.planId;
 
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -126,7 +130,7 @@ export default function RoutinePreviewScreen({
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 110 }]}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + 96 }]}>
         <Text style={[styles.title, { color: theme.colors.textPrimary }]}>
           {plan.days.length > 1 ? day?.label || `Day ${dayIndex + 1}` : plan.name}
         </Text>
@@ -221,7 +225,7 @@ export default function RoutinePreviewScreen({
       </ScrollView>
 
       {/* Start bar */}
-      <View style={[styles.startBar, { paddingBottom: insets.bottom + 12, backgroundColor: theme.colors.background }]}>
+      <View style={[styles.startBar, { bottom: tabBarHeight, backgroundColor: theme.colors.background }]}>
         <TouchableOpacity
           style={[
             styles.startBtn,
@@ -266,7 +270,7 @@ const styles = StyleSheet.create({
   thumbImg: { width: '100%', height: '100%' },
   exName: { fontSize: 15, fontWeight: '800', letterSpacing: 0.3 },
   exMeta: { fontSize: 13, marginTop: 4 },
-  startBar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: spacing.md, paddingTop: 12 },
+  startBar: { position: 'absolute', left: 0, right: 0, paddingHorizontal: spacing.md, paddingVertical: 12 },
   startBtn: {
     flexDirection: 'row',
     alignItems: 'center',

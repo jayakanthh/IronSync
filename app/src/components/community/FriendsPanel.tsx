@@ -120,7 +120,8 @@ export default function FriendsPanel() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
+  // The tab bar is an absolute overlay — leave room or the last card hides behind it.
+  content: { padding: spacing.md, gap: spacing.md, paddingBottom: 110 },
   card: {
     backgroundColor: colors.surface,
     borderWidth: 1,
