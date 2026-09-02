@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useStartWorkoutScroll } from '../../components/common/StartWorkoutButton';
-import { Search, Bookmark, Star, Plus, Play, X, Pencil } from 'lucide-react-native';
+import { Search, Bookmark, Star, Plus, Play, Pencil, X } from 'lucide-react-native';
 import { colors, spacing } from '../../theme/colors';
 import type { Routine } from '../../types/ironsync';
 
@@ -38,7 +38,6 @@ export default function RoutineLibraryScreen({
   const [activeTab, setActiveTab] = useState<typeof TABS[number]>('My Routines');
   const [selectedFilter, setSelectedFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [previewRoutine, setPreviewRoutine] = useState<Routine | null>(null);
 
   const filteredRoutines = routines.filter((r) => {
     if (activeTab === 'My Routines' && !isMine(r)) return false;
@@ -115,7 +114,7 @@ export default function RoutineLibraryScreen({
             <TouchableOpacity
               key={routine.id}
               style={styles.card}
-              onPress={() => setPreviewRoutine(routine)}
+              onPress={() => onStartRoutine(routine)}
               activeOpacity={0.9}
             >
               <View style={styles.cardTopRow}>
@@ -181,99 +180,6 @@ export default function RoutineLibraryScreen({
         </View>
       </ScrollView>
 
-      {/* Routine Detail / Preview Modal */}
-      <Modal visible={!!previewRoutine} transparent animationType="fade" onRequestClose={() => setPreviewRoutine(null)}>
-        <View style={styles.modalOverlay}>
-          {previewRoutine && (
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.modalKicker}>
-                    {previewRoutine.category} Split • {previewRoutine.daysPerWeek} Days/Wk
-                  </Text>
-                  <Text style={styles.modalTitle}>{previewRoutine.name}</Text>
-                  <Text style={styles.modalCreator}>Created by {previewRoutine.creator}</Text>
-                </View>
-                <TouchableOpacity onPress={() => setPreviewRoutine(null)}>
-                  <X size={20} color={colors.textMuted} />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.modalDesc}>
-                {previewRoutine.description ||
-                  'Optimized hypertrophic workload structured for balanced recovery and maximum progressive overload.'}
-              </Text>
-
-              <ScrollView style={{ maxHeight: 192 }}>
-                <Text style={styles.modalExercisesHeader}>
-                  Included Exercises ({previewRoutine.exercises.length}):
-                </Text>
-                {previewRoutine.exercises.map((ex, i) => (
-                  <View key={i} style={styles.exerciseRow}>
-                    <Text style={styles.exerciseName}>{ex.name}</Text>
-                    <Text style={styles.exerciseSets}>{ex.sets} sets × {ex.reps}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-
-              {isMine(previewRoutine) && (
-                <TouchableOpacity
-                  style={[styles.modalDefaultBtn, previewRoutine.isActive && styles.modalDefaultBtnActive]}
-                  onPress={() => onSetDefault(previewRoutine.id)}
-                >
-                  <Star
-                    size={14}
-                    color={colors.primary}
-                    fill={previewRoutine.isActive ? colors.primary : 'transparent'}
-                  />
-                  <Text style={styles.modalDefaultText}>
-                    {previewRoutine.isActive ? 'Default plan ✓ — tap to unset' : 'Set as default plan'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              <View style={styles.modalActions}>
-                {isMine(previewRoutine) ? (
-                  <TouchableOpacity
-                    style={styles.modalEditBtn}
-                    onPress={() => {
-                      const r = previewRoutine;
-                      setPreviewRoutine(null);
-                      onEditRoutine(r);
-                    }}
-                  >
-                    <Pencil size={14} color={colors.primary} strokeWidth={2.5} />
-                    <Text style={styles.modalEditText}>Edit</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.modalEditBtn}
-                    onPress={() => {
-                      const r = previewRoutine;
-                      setPreviewRoutine(null);
-                      onSaveRoutineToggle(r.id);
-                    }}
-                  >
-                    <Plus size={14} color={colors.primary} strokeWidth={2.5} />
-                    <Text style={styles.modalEditText}>Save</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={styles.modalStartBtn}
-                  onPress={() => {
-                    const r = previewRoutine;
-                    setPreviewRoutine(null);
-                    onStartRoutine(r);
-                  }}
-                >
-                  <Play size={14} color={colors.primaryDark} fill={colors.primaryDark} />
-                  <Text style={styles.modalStartText}>Start Routine</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -384,9 +290,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: colors.primary,
   },
-  saveBtnSaved: { backgroundColor: '#1b2b24', borderWidth: 1, borderColor: colors.primary },
   saveBtnText: { color: colors.primaryDark, fontSize: 11, fontWeight: '700' },
-  saveBtnTextSaved: { color: colors.primary, fontSize: 11, fontWeight: '700' },
   editBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -420,88 +324,4 @@ const styles = StyleSheet.create({
   },
   emptyText: { textAlign: 'center', paddingVertical: 48, color: '#6b7280', fontSize: 12 },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', alignItems: 'center', justifyContent: 'center', padding: spacing.md },
-  modalCard: {
-    width: '100%',
-    maxWidth: 400,
-    maxHeight: '85%',
-    borderRadius: 24,
-    backgroundColor: '#171b1f',
-    borderWidth: 1,
-    borderColor: '#2b343c',
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: '#262626',
-  },
-  modalKicker: { color: colors.primary, fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
-  modalTitle: { color: colors.text, fontSize: 17, fontWeight: '700' },
-  modalCreator: { color: colors.textMuted, fontSize: 12 },
-  modalDesc: { color: '#d4d4d4', fontSize: 12 },
-  modalExercisesHeader: { color: colors.textMuted, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', marginBottom: spacing.xs },
-  exerciseRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: '#121517',
-    borderWidth: 1,
-    borderColor: '#262626',
-    marginBottom: spacing.xs,
-  },
-  exerciseName: { color: '#e5e5e5', fontSize: 12, fontWeight: '600' },
-  exerciseSets: { color: colors.primary, fontSize: 11 },
-  modalActions: { flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.xs },
-  modalCloseBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#262626',
-    alignItems: 'center',
-  },
-  modalCloseText: { color: '#d4d4d4', fontSize: 12, fontWeight: '600' },
-  modalEditBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalEditText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
-  modalDefaultBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 11,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  modalDefaultBtnActive: { borderColor: colors.primary, backgroundColor: '#1b2b24' },
-  modalDefaultText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
-  modalStartBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalStartText: { color: colors.primaryDark, fontSize: 12, fontWeight: '700' },
 });

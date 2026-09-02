@@ -106,24 +106,16 @@ export default function WorkoutsScreen({
             <RoutineLibraryScreen
               routines={routines}
               currentUserName={profile?.displayName}
-              onStartRoutine={(r: Routine) => {
-                if (r.creator === profile?.displayName) {
-                  // Preloads routine exercises into LogWorkout logger
-                  navigation.navigate('LogWorkout', {
-                    exercises: r.exercises.map((ex) => ({
-                      exerciseId: ex.exerciseId,
-                      name: ex.name,
-                      targetSets: ex.sets,
-                      targetReps: parseInt(ex.reps) || 10,
-                    })),
-                    sourceLabel: r.name,
-                  });
-                } else {
-                  // Public plan → adopt first
-                  navigation.navigate('AdoptPlan', { planId: r.id });
-                }
-              }}
-              onSaveRoutineToggle={handleAdopt}
+            onStartRoutine={(r: Routine) => {
+              // Show what the session actually holds before starting it. Public
+              // plans still go through Adopt first, so you own an editable copy.
+              if (r.creator === profile?.displayName) {
+                navigation.navigate('RoutinePreview', { planId: r.id });
+              } else {
+                navigation.navigate('AdoptPlan', { planId: r.id });
+              }
+            }}
+            onSaveRoutineToggle={handleAdopt}
               onSetDefault={handleSetDefault}
               onCreateRoutineClick={() => navigation.navigate('PlanBuilder')}
               onEditRoutine={(r: Routine) => navigation.navigate('PlanBuilder', { planId: r.id })}

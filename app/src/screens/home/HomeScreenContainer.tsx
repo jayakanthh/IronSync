@@ -171,6 +171,21 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
     caloriesToday: calories,
   };
 
+  /**
+   * Today's card opens the plan preview (what you're about to do) rather than
+   * dropping straight into the logger. With no plan set there's nothing to
+   * preview, so fall back to starting a free workout.
+   */
+  const openTodaysPlan = () => {
+    const planId = profile?.activePlanId;
+    if (!planId) return startWorkoutFromHome();
+    navigation.navigate('Workouts', {
+      screen: 'RoutinePreview',
+      params: { planId },
+      initial: false,
+    });
+  };
+
   const startWorkoutFromHome = () =>
     // initial: false keeps WorkoutsHome under the logger, so closing it lands
     // on the Library instead of an empty stack.
@@ -196,7 +211,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
           todayTitle={today?.title}
           todaySubtitle={today?.subtitle}
           onFindMatchClick={() => navigation.navigate('Workouts')} // Fallback: Route to routines
-          onStartTodayPlan={() => startWorkoutFromHome()}
+          onStartTodayPlan={openTodaysPlan}
           onSelectBuddyWorkout={(buddy) => {
             // If buddy is training, creator invites B or joins
             navigation.navigate('Community');

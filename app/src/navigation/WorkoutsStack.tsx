@@ -3,6 +3,7 @@ import WorkoutsScreen from '../screens/workouts/WorkoutsScreen';
 import PlanBuilderScreen from '../screens/workouts/PlanBuilderScreen';
 import AdoptPlanScreen from '../screens/workouts/AdoptPlanScreen';
 import LogWorkoutScreen from '../screens/workouts/LogWorkoutScreen';
+import RoutinePreviewScreen from '../screens/workouts/RoutinePreviewScreen';
 import ProgressAnalyticsScreen from '../screens/measurements/ProgressAnalyticsScreen';
 
 const Stack = createNativeStackNavigator();
@@ -22,6 +23,7 @@ export default function WorkoutsStack() {
         component={AdoptPlanScreen}
         options={{ presentation: 'modal' }}
       />
+      <Stack.Screen name="RoutinePreview" component={RoutinePreviewScreen} />
       <Stack.Screen
         name="LogWorkout"
         component={LogWorkoutScreen}
