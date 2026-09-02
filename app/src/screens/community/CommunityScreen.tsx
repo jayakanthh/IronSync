@@ -18,6 +18,7 @@ import { useCurrentUser } from '../../context/CurrentUser';
 import { getMyCommunities, getMyGroups, getStreakBoard } from '../../services/index';
 import type { Community, Group, StreakBoardEntry } from '../../models/index';
 import FriendsPanel from '../../components/community/FriendsPanel';
+import { getCommunityBg } from '../../utils/formatting/avatarColors';
 
 export default function CommunityScreen() {
   const insets = useSafeAreaInsets();
@@ -63,13 +64,6 @@ export default function CommunityScreen() {
     }
   }, [loadData, profile]);
 
-  // Color mapping based on community name to give unique avatar colors
-  const getAvatarBg = (name: string) => {
-    const colorsList = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-    let sum = 0;
-    for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
-    return colorsList[sum % colorsList.length];
-  };
 
   const renderCommunitiesTab = () => {
     if (loading) {
@@ -100,7 +94,7 @@ export default function CommunityScreen() {
               onPress={() => navigation.navigate('CommunityDetail', { communityId: item.id })}
             >
               <Card style={styles.commCard}>
-                <View style={[styles.avatar, { backgroundColor: getAvatarBg(item.name) }]}>
+                <View style={[styles.avatar, { backgroundColor: getCommunityBg(item.name) }]}>
                   <Typography variant="h2" style={styles.avatarText}>
                     {item.name.slice(0, 2).toUpperCase()}
                   </Typography>

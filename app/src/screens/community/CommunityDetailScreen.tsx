@@ -8,7 +8,7 @@ import { ChevronLeft, Globe, Lock } from 'lucide-react-native';
 
 import { getCommunity } from '../../services/index';
 import type { Community } from '../../models/index';
-import { getAvatarBg } from '../../utils/formatting/avatarColors';
+import { getCommunityBg } from '../../utils/formatting/avatarColors';
 
 import OverviewTab from '../../components/community/OverviewTab';
 import PeopleTab from '../../components/community/PeopleTab';
@@ -67,7 +67,7 @@ export default function CommunityDetailScreen() {
         </TouchableOpacity>
         
         <View style={styles.headerTitleGroup}>
-          <View style={[styles.headerAvatar, { backgroundColor: getAvatarBg(community.name) }]}>
+          <View style={[styles.headerAvatar, { backgroundColor: getCommunityBg(community.name) }]}>
             <Typography variant="h2" style={{ color: '#FFF' }}>
               {community.name.slice(0, 2).toUpperCase()}
             </Typography>

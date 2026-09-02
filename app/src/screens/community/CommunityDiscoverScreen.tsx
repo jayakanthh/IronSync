@@ -18,6 +18,7 @@ import { Button } from '../../components/ui/Button';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { discoverCommunities, searchCommunities, joinCommunity, joinByInviteCode } from '../../services/index';
 import type { Community } from '../../models/index';
+import { getCommunityBg } from '../../utils/formatting/avatarColors';
 
 export default function CommunityDiscoverScreen() {
   const insets = useSafeAreaInsets();
@@ -100,12 +101,6 @@ export default function CommunityDiscoverScreen() {
     }
   };
 
-  const getAvatarBg = (name: string) => {
-    const colorsList = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-    let sum = 0;
-    for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
-    return colorsList[sum % colorsList.length];
-  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -203,7 +198,7 @@ export default function CommunityDiscoverScreen() {
             const isJoined = profile?.communityIds?.includes(item.id);
             return (
               <Card key={item.id} style={styles.commCard}>
-                <View style={[styles.avatar, { backgroundColor: getAvatarBg(item.name) }]}>
+                <View style={[styles.avatar, { backgroundColor: getCommunityBg(item.name) }]}>
                   <Typography variant="h2" style={styles.avatarText}>
                     {item.name.slice(0, 2).toUpperCase()}
                   </Typography>

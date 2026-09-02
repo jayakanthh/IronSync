@@ -28,6 +28,8 @@ interface HomeScreenProps {
   onSelectBuddyWorkout: (buddy: TrainingBuddy) => void;
   todayTitle?: string; // today's workout from the active plan
   todaySubtitle?: string;
+  /** 'rest' when the default routine schedules nothing for today. */
+  todayState?: 'workout' | 'rest' | 'none';
 }
 
 
@@ -44,6 +46,7 @@ export default function HomeScreen({
   onSelectBuddyWorkout,
   todayTitle,
   todaySubtitle,
+  todayState,
 }: HomeScreenProps) {
   const [showFriendsWorkouts, setShowFriendsWorkouts] = useState(true);
   // Drives the floating Start-New-Workout pill: it slides away as you scroll down.
@@ -115,6 +118,14 @@ export default function HomeScreen({
       {/* TODAY'S PLAN Section */}
       <View style={styles.section}>
         <SectionHeader>TODAY'S PLAN</SectionHeader>
+        {todayState === 'rest' ? (
+          // Nothing scheduled — don't dress a rest day up as a workout.
+          <View style={styles.restCard}>
+            <Text style={styles.restEmoji}>😌</Text>
+            <Text style={styles.restTitle}>Take a rest today</Text>
+            <Text style={styles.restSubtitle}>{todaySubtitle}</Text>
+          </View>
+        ) : (
         <TouchableOpacity style={styles.planCard} onPress={onStartTodayPlan} activeOpacity={0.9}>
           <View style={styles.planImageWrap}>
             <Image
@@ -141,6 +152,7 @@ export default function HomeScreen({
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+        )}
       </View>
 
       {/* RECENT WORKOUTS Section */}
@@ -363,6 +375,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#14171a',
     overflow: 'hidden',
   },
+  restCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#14171a',
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    gap: 6,
+  },
+  restEmoji: { fontSize: 28 },
+  restTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
+  restSubtitle: { color: colors.textMuted, fontSize: 13, textAlign: 'center' },
   planImageWrap: { height: 112, width: '100%' },
   planImage: { width: '100%', height: '100%' },
   planBadge: {

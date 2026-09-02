@@ -28,7 +28,9 @@ const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export default function HomeScreenContainer({ navigation }: { navigation: NavigationProp<any> }) {
   const { theme } = useTheme();
   const { profile } = useCurrentUser();
-  const [today, setToday] = useState<{ title: string; subtitle: string } | undefined>(undefined);
+  const [today, setToday] = useState<
+    { title: string; subtitle: string; state: 'workout' | 'rest' | 'none' } | undefined
+  >(undefined);
   const [calories, setCalories] = useState(0);
   const [workoutsList, setWorkoutsList] = useState<any[]>([]);
   const [trainingNowList, setTrainingNowList] = useState<TrainingBuddy[]>([]);
@@ -58,11 +60,16 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
         const day = plan.days.find((d) => d.label === todayLabel);
         setToday(
           day
-            ? { title: `${plan.name} · ${todayLabel}`, subtitle: `${day.exercises.length} exercises` }
-            : { title: 'Rest day 😌', subtitle: plan.name },
+            ? {
+                title: `${plan.name} · ${todayLabel}`,
+                subtitle: `${day.exercises.length} exercises`,
+                state: 'workout',
+              }
+            // Your default routine schedules nothing for today.
+            : { title: 'Rest day', subtitle: `${plan.name} has nothing scheduled today`, state: 'rest' },
         );
       } else {
-        setToday({ title: 'No plan yet', subtitle: 'Create one in Workouts →' });
+        setToday({ title: 'No plan yet', subtitle: 'Create one in Workouts →', state: 'none' });
       }
 
       // Calories Today
@@ -212,6 +219,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
           history={workoutsList}
           todayTitle={today?.title}
           todaySubtitle={today?.subtitle}
+          todayState={today?.state}
           onFindMatchClick={() => navigation.navigate('Workouts')} // Fallback: Route to routines
           onStartTodayPlan={openTodaysPlan}
           onSelectBuddyWorkout={(buddy) => {
