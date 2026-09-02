@@ -292,6 +292,10 @@ export default function NutritionScreen() {
   const [customProtein, setCustomProtein] = useState('');
   const [customCarbs, setCustomCarbs] = useState('');
   const [customFat, setCustomFat] = useState('');
+  // The model has carried these three all along; the form never asked for them.
+  const [customFiber, setCustomFiber] = useState('');
+  const [customSugar, setCustomSugar] = useState('');
+  const [customSodium, setCustomSodium] = useState('');
 
   // Editing logged entry state
   const [editingEntry, setEditingEntry] = useState<FoodLogEntry | null>(null);
@@ -761,6 +765,7 @@ export default function NutritionScreen() {
   const resetCustomForm = () => {
     setCustomName(''); setCustomBrand(''); setCustomSize('100'); setCustomUnit('g');
     setCustomCal(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
+    setCustomFiber(''); setCustomSugar(''); setCustomSodium('');
     setEditingCustomFood(null);
   };
 
@@ -775,6 +780,9 @@ export default function NutritionScreen() {
     setCustomProtein(String(food.protein));
     setCustomCarbs(String(food.carbs));
     setCustomFat(String(food.fat));
+    setCustomFiber(food.fiber != null ? String(food.fiber) : '');
+    setCustomSugar(food.sugar != null ? String(food.sugar) : '');
+    setCustomSodium(food.sodium != null ? String(food.sodium) : '');
     setShowCustomModal(true);
   };
 
@@ -793,6 +801,11 @@ export default function NutritionScreen() {
       protein: parseFloat(customProtein) || 0,
       carbs: parseFloat(customCarbs) || 0,
       fat: parseFloat(customFat) || 0,
+      // Optional — left undefined rather than 0 when blank, so "unknown"
+      // and "genuinely none" stay distinguishable.
+      fiber: customFiber.trim() ? parseFloat(customFiber) || 0 : undefined,
+      sugar: customSugar.trim() ? parseFloat(customSugar) || 0 : undefined,
+      sodium: customSodium.trim() ? parseFloat(customSodium) || 0 : undefined,
     };
 
     setLoading(true);
@@ -1544,7 +1557,22 @@ export default function NutritionScreen() {
                   <Typography variant="caption" color="#f87171" style={{ fontSize: 10 }}>FATS (g)</Typography>
                   <TextInput style={styles.manualMacroInput} placeholder="0" placeholderTextColor={colors.textMuted} keyboardType="number-pad" value={customFat} onChangeText={setCustomFat} />
                 </View>
+                <View style={styles.manualMacroCell}>
+                  <Typography variant="caption" color="#22c55e" style={{ fontSize: 10 }}>FIBRE (g)</Typography>
+                  <TextInput style={styles.manualMacroInput} placeholder="—" placeholderTextColor={colors.textMuted} keyboardType="number-pad" value={customFiber} onChangeText={setCustomFiber} />
+                </View>
+                <View style={styles.manualMacroCell}>
+                  <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>SUGAR (g)</Typography>
+                  <TextInput style={styles.manualMacroInput} placeholder="—" placeholderTextColor={colors.textMuted} keyboardType="number-pad" value={customSugar} onChangeText={setCustomSugar} />
+                </View>
+                <View style={styles.manualMacroCell}>
+                  <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>SODIUM (mg)</Typography>
+                  <TextInput style={styles.manualMacroInput} placeholder="—" placeholderTextColor={colors.textMuted} keyboardType="number-pad" value={customSodium} onChangeText={setCustomSodium} />
+                </View>
               </View>
+              <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 11, marginTop: 8 }}>
+                All values per {customSize || '100'}{customUnit}. Fibre, sugar and sodium are optional.
+              </Typography>
 
               <Button
                 variant="primary"
