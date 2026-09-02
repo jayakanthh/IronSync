@@ -56,6 +56,40 @@ export interface FoodLogEntry {
   createdAt: number;
 }
 
+/** One food inside a saved meal — the loggable half of a FoodLogEntry. */
+export interface SavedMealItem {
+  name: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  foodId?: string;
+  brand?: string;
+  quantity?: number;
+  unit?: string;
+  fiberG?: number;
+  sugarG?: number;
+  sodiumMg?: number;
+}
+
+/**
+ * A meal you've saved to re-log in one tap ("my usual breakfast").
+ * Foods are snapshotted, so editing the source food later won't rewrite history.
+ */
+export interface SavedMeal {
+  id: string;
+  name: string;
+  items: SavedMealItem[];
+  createdAt: number;
+}
+
+/** A day's water intake, in millilitres. */
+export interface WaterLog {
+  date: string; // YYYY-MM-DD
+  ml: number;
+  updatedAt: number;
+}
+
 export interface UserFavoriteFood {
   userId: string;
   foodId: string;

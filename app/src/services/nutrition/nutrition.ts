@@ -12,7 +12,7 @@ import {
   orderBy,
   writeBatch,
 } from 'firebase/firestore';
-import type { FoodLogEntry, NutritionTargets, FoodProduct } from '../../models/index';
+import type { FoodLogEntry, NutritionTargets, FoodProduct, SavedMeal, SavedMealItem } from '../../models/index';
 import { db } from '../../config/firebase';
 
 const targetsRef = (userId: string) =>
@@ -53,6 +53,24 @@ export async function getFoodLog(userId: string, date: string): Promise<FoodLogE
   return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<FoodLogEntry, 'id'>) }));
 }
 
+/**
+ * Every entry between two days (inclusive), for the reports view. One range
+ * query beats one request per day — the month view used to fire 30 of them.
+ */
+export async function getFoodLogRange(
+  userId: string,
+  startDate: string,
+  endDate: string,
+): Promise<FoodLogEntry[]> {
+  const q = query(
+    collection(db, 'users', userId, 'foodLog'),
+    where('date', '>=', startDate),
+    where('date', '<=', endDate),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<FoodLogEntry, 'id'>) }));
+}
+
 /** Delete a food entry. */
 export async function deleteFood(userId: string, entryId: string): Promise<void> {
   await deleteDoc(doc(db, 'users', userId, 'foodLog', entryId));
@@ -70,6 +88,95 @@ export function sumDay(entries: FoodLogEntry[]): NutritionTargets {
     }),
     { dailyCalories: 0, proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 },
   );
+}
+
+/** The micronutrients we carry but don't have targets for. */
+export function sumMicros(entries: FoodLogEntry[]): { sugarG: number; sodiumMg: number } {
+  return entries.reduce(
+    (acc, e) => ({
+      sugarG: acc.sugarG + (e.sugarG ?? 0),
+      sodiumMg: acc.sodiumMg + (e.sodiumMg ?? 0),
+    }),
+    { sugarG: 0, sodiumMg: 0 },
+  );
+}
+
+// ─── Water ───────────────────────────────────────────────────────────────────
+
+const waterRef = (userId: string, date: string) => doc(db, 'users', userId, 'water', date);
+
+/** A day's water intake in ml (0 if nothing logged). */
+export async function getWater(userId: string, date: string): Promise<number> {
+  const snap = await getDoc(waterRef(userId, date));
+  return snap.exists() ? ((snap.data() as { ml?: number }).ml ?? 0) : 0;
+}
+
+/** Overwrite a day's water intake. Never goes negative. */
+export async function setWater(userId: string, date: string, ml: number): Promise<void> {
+  await setDoc(waterRef(userId, date), { date, ml: Math.max(0, Math.round(ml)), updatedAt: Date.now() });
+}
+
+/**
+ * A sensible daily water target: ~35ml per kg of bodyweight, rounded to the
+ * nearest 100ml and kept inside 2–4L. Falls back to 2.5L with no weight on file.
+ */
+export function suggestWaterTarget(weightKg?: number): number {
+  if (!weightKg) return 2500;
+  const raw = weightKg * 35;
+  return Math.min(4000, Math.max(2000, Math.round(raw / 100) * 100));
+}
+
+// ─── Saved meals ─────────────────────────────────────────────────────────────
+
+const savedMealsCol = (userId: string) => collection(db, 'users', userId, 'savedMeals');
+
+/** Save a set of logged foods as a reusable meal. Returns the new id. */
+export async function saveMeal(
+  userId: string,
+  name: string,
+  items: SavedMealItem[],
+): Promise<string> {
+  const ref = await addDoc(savedMealsCol(userId), { name, items, createdAt: Date.now() });
+  return ref.id;
+}
+
+/** Your saved meals, newest first. */
+export async function getSavedMeals(userId: string): Promise<SavedMeal[]> {
+  const snap = await getDocs(savedMealsCol(userId));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...(d.data() as Omit<SavedMeal, 'id'>) }))
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+export async function deleteSavedMeal(userId: string, mealId: string): Promise<void> {
+  await deleteDoc(doc(db, 'users', userId, 'savedMeals', mealId));
+}
+
+/** Log every food in a saved meal into one meal slot on one day. */
+export async function logSavedMeal(
+  userId: string,
+  meal: SavedMeal,
+  date: string,
+  slot: FoodLogEntry['meal'],
+): Promise<void> {
+  await Promise.all(meal.items.map((item) => logFood(userId, { ...item, date, meal: slot })));
+}
+
+/**
+ * Re-log everything you ate in one meal slot on another day — "same breakfast
+ * as yesterday". Returns how many entries were copied.
+ */
+export async function copyMealFromDate(
+  userId: string,
+  fromDate: string,
+  toDate: string,
+  slot: FoodLogEntry['meal'],
+): Promise<number> {
+  const source = (await getFoodLog(userId, fromDate)).filter((e) => e.meal === slot);
+  await Promise.all(
+    source.map(({ id, createdAt, ...item }) => logFood(userId, { ...item, date: toDate, meal: slot })),
+  );
+  return source.length;
 }
 
 // ─── Food Database & Search ──────────────────────────────────────────────────
