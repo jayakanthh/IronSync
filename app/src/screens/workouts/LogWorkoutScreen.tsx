@@ -10,7 +10,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Pressable,
   View,
   BackHandler,
   Dimensions,
@@ -68,6 +67,7 @@ import {
   heartbeat,
 } from '../../services/index';
 import { useCurrentUser } from '../../context/CurrentUser';
+import SwipeToDelete from '../../components/common/SwipeToDelete';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
 
 import {
@@ -509,30 +509,21 @@ export default function LogWorkoutScreen({
     );
   };
 
-  /** Remove one set and renumber the rest. Confirmed, since it's destructive. */
+  /**
+   * Remove one set and renumber the rest. No confirm dialog: you have to swipe
+   * the row open and then tap Delete, which is deliberate enough on its own.
+   */
   const removeSet = (exIndex: number, setIdx: number) => {
-    const set = items[exIndex]?.sets[setIdx];
-    if (!set) return;
-    Alert.alert(
-      `Delete set ${set.setNumber}?`,
-      'This removes it from the workout.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () =>
-            setItems((prev) =>
-              prev.map((item, i) => {
-                if (i !== exIndex) return item;
-                const sets = item.sets
-                  .filter((_, idx) => idx !== setIdx)
-                  .map((s, idx) => ({ ...s, setNumber: idx + 1 }));
-                return { ...item, sets };
-              }),
-            ),
-        },
-      ],
+    setItems((prev) =>
+      prev.map((item, i) => {
+        if (i !== exIndex) return item;
+        return {
+          ...item,
+          sets: item.sets
+            .filter((_, idx) => idx !== setIdx)
+            .map((s, idx) => ({ ...s, setNumber: idx + 1 })),
+        };
+      }),
     );
   };
 
@@ -1255,15 +1246,13 @@ export default function LogWorkoutScreen({
                     const isDrop = set.setType === 'drop';
 
                     return (
-                      // Long-press to delete, rather than a ✕ in the row: the
-                      // ✓ gets tapped fast mid-set and a neighbouring ✕ would
-                      // get hit by mistake. Inputs and buttons keep their own
-                      // taps; the press lands on the row's own space.
-                      <Pressable
+                      // Swipe the row left to uncover Delete. No ✕ in the row
+                      // itself: the ✓ gets tapped fast mid-set and a
+                      // neighbouring delete button would get hit by mistake.
+                      <SwipeToDelete
                         key={setIdx}
                         style={[styles.setRow, set.completed && styles.setRowCompleted]}
-                        onLongPress={() => removeSet(exIndex, setIdx)}
-                        delayLongPress={350}
+                        onDelete={() => removeSet(exIndex, setIdx)}
                       >
                         {/* Set type badge dropdown/clicker */}
                         <TouchableOpacity
@@ -1366,13 +1355,9 @@ export default function LogWorkoutScreen({
                             <View style={styles.checkOutline} />
                           )}
                         </TouchableOpacity>
-                      </Pressable>
+                      </SwipeToDelete>
                     );
                   })}
-
-                  {ex.sets.length > 0 && (
-                    <Text style={styles.setHint}>Long-press a set row to delete it</Text>
-                  )}
 
                   <View style={styles.actionsRow}>
                     <TouchableOpacity style={styles.addSetBtn} onPress={() => addSet(ex.exerciseId, 'working')}>
@@ -1863,7 +1848,6 @@ const styles = StyleSheet.create({
 
 
   actionsRow: { flexDirection: 'row', gap: spacing.md, paddingTop: 4 },
-  setHint: { color: colors.textMuted, fontSize: 10, fontStyle: 'italic', paddingTop: 6 },
   addSetBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 4 },
   addSetText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
 
