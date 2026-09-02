@@ -24,11 +24,11 @@ export default function WorkoutsStack() {
         options={{ presentation: 'modal' }}
       />
       <Stack.Screen name="RoutinePreview" component={RoutinePreviewScreen} />
-      <Stack.Screen
-        name="LogWorkout"
-        component={LogWorkoutScreen}
-        options={{ presentation: 'modal' }}
-      />
+      {/* Deliberately NOT presentation: 'modal'. A modal sits above the tab
+          navigator, so minimising (switching tabs) couldn't reveal anything
+          underneath it. The tab bar is hidden for this route instead — see
+          RootNavigator. */}
+      <Stack.Screen name="LogWorkout" component={LogWorkoutScreen} />
       <Stack.Screen
         name="ProgressAnalytics"
         component={ProgressAnalyticsScreen}

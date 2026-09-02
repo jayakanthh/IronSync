@@ -1233,12 +1233,18 @@ export default function LogWorkoutScreen({
                 <Card style={[styles.exCard, inGroup && styles.exCardInGroup]}>
                   {/* Exercise Title row */}
                   <View style={styles.exHeader}>
-                    <View style={{ flex: 1 }}>
+                    {/* Tap the name mid-workout for how to do it, what it works
+                        and your history — same page the routine preview opens. */}
+                    <TouchableOpacity
+                      style={{ flex: 1 }}
+                      activeOpacity={0.7}
+                      onPress={() => navigation.navigate('ExerciseDetail', { exerciseId: ex.exerciseId })}
+                    >
                       <Typography variant="bodyBold" style={styles.exName}>{ex.name}</Typography>
                       <Typography variant="caption" color={colors.textMuted}>
-                        {ex.muscleGroup || 'Muscle'} {isCardio ? '• Cardio' : ''}
+                        {ex.muscleGroup || 'Muscle'} {isCardio ? '• Cardio' : ''} • Tap for info
                       </Typography>
-                    </View>
+                    </TouchableOpacity>
                     <TouchableOpacity onPress={() => setShowExerciseOptions(ex.exerciseId)} style={styles.iconPadding}>
                       <MoreVertical size={18} color={colors.textMuted} />
                     </TouchableOpacity>

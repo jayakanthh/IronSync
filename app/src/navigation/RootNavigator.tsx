@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { NavigationContainer, DarkTheme, DefaultTheme, createNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme, createNavigationContainerRef, getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, TouchableOpacity, StyleSheet, Modal, Text } from 'react-native';
 import { Home, Dumbbell, Users, Utensils, Plus, X, Award, TrendingUp, User, Calendar } from 'lucide-react-native';
@@ -55,11 +55,16 @@ function MainTabs() {
         <Tab.Screen 
           name="Workouts" 
           component={WorkoutsStack} 
-          options={{
+          options={({ route }) => ({
             // Route name stays "Workouts" — navigate('Workouts') is used all over.
             tabBarLabel: 'Library',
             tabBarIcon: ({ color }) => <Dumbbell size={20} color={color} />,
-          }}
+            // The logger owns the whole screen while it's open.
+            tabBarStyle:
+              getFocusedRouteNameFromRoute(route) === 'LogWorkout'
+                ? { display: 'none' }
+                : [styles.tabBar, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border }],
+          })}
         />
 
         <Tab.Screen
