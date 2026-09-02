@@ -172,7 +172,11 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
   };
 
   const startWorkoutFromHome = () =>
-    startWorkout(profile, (params) => navigation.navigate('Workouts', { screen: 'LogWorkout', params }));
+    // initial: false keeps WorkoutsHome under the logger, so closing it lands
+    // on the Library instead of an empty stack.
+    startWorkout(profile, (params) =>
+      navigation.navigate('Workouts', { screen: 'LogWorkout', params, initial: false }),
+    );
 
   return (
     <StartWorkoutScrollProvider>

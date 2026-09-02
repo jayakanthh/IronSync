@@ -353,6 +353,17 @@ export default function LogWorkoutScreen({
   // the screen gets "stuck". Fall back to the Workouts home in that case.
   const dismiss = useCallback(() => {
     const nav = navigation as any;
+    const index = nav.getState?.()?.index ?? 0;
+
+    // Opened straight from another tab, this can be the ONLY route in the
+    // Workouts stack. POP_TO_TOP then has nothing to pop, goes unhandled by
+    // every navigator, and the screen stays stuck — so swap it out instead.
+    if (index === 0) {
+      if (typeof nav.replace === 'function') nav.replace('WorkoutsHome');
+      else nav.navigate('WorkoutsHome');
+      return;
+    }
+
     // popToTop clears this screen off the Workouts stack. Plain goBack() can
     // return to the *Home tab* while leaving the finished/discarded session on
     // the stack — so tapping Workouts later would restore the stale session.

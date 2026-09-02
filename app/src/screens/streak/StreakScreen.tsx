@@ -166,6 +166,8 @@ export default function StreakScreen() {
               navigation.navigate('Workouts', {
                 screen: 'LogWorkout',
                 params: { exercises: [], sourceLabel: 'Free Workout' },
+                // Keep WorkoutsHome beneath the logger so closing it works.
+                initial: false,
               });
             }}
           />
