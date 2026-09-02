@@ -940,12 +940,7 @@ export default function NutritionScreen() {
             <View style={styles.headerIconBox}>
               <Utensils size={18} color={colors.warning} />
             </View>
-            <View>
-              <Typography variant="h2">Nutrition Diary</Typography>
-              <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>
-                Log Food, Calorie targets & macro analysis
-              </Typography>
-            </View>
+            <Typography variant="h2">Nutrition Diary</Typography>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.headerIconBtn} onPress={() => loadProgress()}>

@@ -10,6 +10,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   View,
   BackHandler,
   Dimensions,
@@ -505,6 +506,33 @@ export default function LogWorkoutScreen({
           ],
         };
       })
+    );
+  };
+
+  /** Remove one set and renumber the rest. Confirmed, since it's destructive. */
+  const removeSet = (exIndex: number, setIdx: number) => {
+    const set = items[exIndex]?.sets[setIdx];
+    if (!set) return;
+    Alert.alert(
+      `Delete set ${set.setNumber}?`,
+      'This removes it from the workout.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () =>
+            setItems((prev) =>
+              prev.map((item, i) => {
+                if (i !== exIndex) return item;
+                const sets = item.sets
+                  .filter((_, idx) => idx !== setIdx)
+                  .map((s, idx) => ({ ...s, setNumber: idx + 1 }));
+                return { ...item, sets };
+              }),
+            ),
+        },
+      ],
     );
   };
 
@@ -1227,7 +1255,16 @@ export default function LogWorkoutScreen({
                     const isDrop = set.setType === 'drop';
 
                     return (
-                      <View key={setIdx} style={[styles.setRow, set.completed && styles.setRowCompleted]}>
+                      // Long-press to delete, rather than a ✕ in the row: the
+                      // ✓ gets tapped fast mid-set and a neighbouring ✕ would
+                      // get hit by mistake. Inputs and buttons keep their own
+                      // taps; the press lands on the row's own space.
+                      <Pressable
+                        key={setIdx}
+                        style={[styles.setRow, set.completed && styles.setRowCompleted]}
+                        onLongPress={() => removeSet(exIndex, setIdx)}
+                        delayLongPress={350}
+                      >
                         {/* Set type badge dropdown/clicker */}
                         <TouchableOpacity
                           style={[styles.typeBadge, isWarmup && styles.badgeWarmup, isDrop && styles.badgeDrop]}
@@ -1329,9 +1366,13 @@ export default function LogWorkoutScreen({
                             <View style={styles.checkOutline} />
                           )}
                         </TouchableOpacity>
-                      </View>
+                      </Pressable>
                     );
                   })}
+
+                  {ex.sets.length > 0 && (
+                    <Text style={styles.setHint}>Long-press a set row to delete it</Text>
+                  )}
 
                   <View style={styles.actionsRow}>
                     <TouchableOpacity style={styles.addSetBtn} onPress={() => addSet(ex.exerciseId, 'working')}>
@@ -1822,6 +1863,7 @@ const styles = StyleSheet.create({
 
 
   actionsRow: { flexDirection: 'row', gap: spacing.md, paddingTop: 4 },
+  setHint: { color: colors.textMuted, fontSize: 10, fontStyle: 'italic', paddingTop: 6 },
   addSetBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 4 },
   addSetText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
 
