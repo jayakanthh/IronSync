@@ -16,7 +16,7 @@ import {
   currentUserId, signOutUser, getMeasurementHistory, getActiveGoal,
   getExercisesByIds, getWorkoutHistory, searchExercises, getPersonalRecords, getFoodLog
 } from '../../services/index';
-import { getAvatarBg } from '../../utils/formatting/avatarColors';
+import Avatar from '../../components/common/Avatar';
 import {
   getUnitSystem,
   convertWeightToDisplay,
@@ -613,11 +613,7 @@ export default function ProfileScreen() {
       {/* Top Header */}
       <View style={styles.header}>
         <View style={styles.headerUser}>
-          <View style={[styles.avatar, { backgroundColor: getAvatarBg(profile.displayName || 'User') }]}>
-            <Text style={styles.avatarText}>
-              {(profile.displayName || 'U').slice(0, 2).toUpperCase()}
-            </Text>
-          </View>
+          <Avatar name={profile.displayName} size={44} />
           <View style={styles.userInfo}>
             <Text style={styles.userName}>{profile.displayName || 'Iron Athlete'}</Text>
             {/* username is stored with a leading '@' already — don't prepend another */}
@@ -1216,8 +1212,6 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   headerUser: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
   userInfo: { gap: 1 },
   userName: { color: colors.text, fontSize: 16, fontWeight: '800' },
   userSub: { color: colors.textMuted, fontSize: 12 },

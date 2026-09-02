@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { colors, spacing, radius } from '../../theme/colors';
 import { Card } from '../ui/Card';
+import Avatar from '../common/Avatar';
 import { getFriends, getWorkoutHistory } from '../../services/index';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { useNavigation } from '@react-navigation/native';
@@ -88,9 +89,7 @@ export default function FriendsPanel() {
             >
               <Card style={styles.friendCard}>
                 <View style={styles.friendHeader}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{(f.name || '?').slice(0, 2).toUpperCase()}</Text>
-                  </View>
+                  <Avatar name={f.name} size={40} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{f.name}</Text>
                     <View style={styles.statusRow}>
@@ -161,8 +160,6 @@ const styles = StyleSheet.create({
   accept: { backgroundColor: colors.primary, borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: 6 },
   acceptText: { color: colors.primaryDark, fontSize: 13, fontWeight: '800' },
   decline: { color: colors.textMuted, fontSize: 13 },
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: colors.primaryDark, fontSize: 18, fontWeight: '800' },
   name: { color: colors.text, fontSize: 15, fontWeight: '600' },
   remove: { color: colors.textMuted, fontSize: 13 },
   searchResultRow: {

@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Bell, Flame, Award } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/colors';
 import { Typography } from '../ui/Typography';
+import Avatar from './Avatar';
 import { UserProfile } from '../../types/ironsync';
 
 interface TopHeaderProps {
@@ -46,7 +47,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           onPress={onAvatarPress} 
           style={[styles.avatarContainer, { borderColor: theme.colors.primary + '4d' }]}
         >
-          <Image source={{ uri: user.avatar }} style={styles.avatar} />
+          <Avatar name={user.name} size={36} />
         </TouchableOpacity>
         
         <View style={styles.logoContainer}>
