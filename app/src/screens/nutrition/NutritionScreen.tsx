@@ -16,7 +16,7 @@ import Svg, { Circle, G } from 'react-native-svg';
 import {
   Utensils, Plus, Sparkles, Flame, Droplets, Trash2,
   Bot, ChevronDown, ChevronUp, Check, Search, ArrowLeft, Heart, Edit2, Info, TrendingUp,
-  ChevronLeft, ChevronRight, Bookmark, Copy, Minus
+  ChevronLeft, ChevronRight, Bookmark, Copy, Minus, CalendarDays
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../theme/colors';
@@ -186,6 +186,39 @@ function StatCell({ label, value, unit, color }: {
   );
 }
 
+/** First and last day of the month containing `iso`, as day strings. */
+function monthBounds(iso: string): { start: string; end: string } {
+  const d = fromISODate(iso);
+  const first = new Date(d.getFullYear(), d.getMonth(), 1, 12);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0, 12);
+  const fmt = (x: Date) =>
+    `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  return { start: fmt(first), end: fmt(last) };
+}
+
+/** Same day-of-month in a month `delta` away (clamped by the JS Date rollover). */
+function shiftMonth(iso: string, delta: number): string {
+  const d = fromISODate(iso);
+  const shifted = new Date(d.getFullYear(), d.getMonth() + delta, 1, 12);
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+/**
+ * The cells of a month grid: leading blanks so the 1st lands under its weekday
+ * (Sunday-first), then every day of the month.
+ */
+function monthGrid(iso: string): (string | null)[] {
+  const { start, end } = monthBounds(iso);
+  const lead = fromISODate(start).getDay();
+  const daysInMonth = fromISODate(end).getDate();
+  return [
+    ...Array.from({ length: lead }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => addDays(start, i)),
+  ];
+}
+
+const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
 /** Friendly name for a day: Today / Yesterday / "Mon 14 Sep". */
 function dayLabel(iso: string): string {
   if (iso === todayISO()) return 'Today';
@@ -200,6 +233,10 @@ export default function NutritionScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('diary');
   // Which day the diary is showing. Everything logs against this, not "now".
   const [selectedDate, setSelectedDate] = useState<string>(todayISO());
+  // Month-grid picker: which month it's showing, and which of its days have food logged.
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState<string>(todayISO());
+  const [loggedDays, setLoggedDays] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [targets, setTargets] = useState<NutritionTargets | null>(null);
   const [dayEntries, setDayEntries] = useState<FoodLogEntry[]>([]);
@@ -484,6 +521,41 @@ export default function NutritionScreen() {
     setAiPrompt('');
     setViewMode('diary');
     await loadData();
+  };
+
+  // ── Calendar ──────────────────────────────────────────────────────────────
+  /**
+   * Load which days of the visible month have any food logged, so the grid can
+   * dot them. One range query for the whole month.
+   */
+  const loadMonthDots = useCallback(async (monthAnchor: string) => {
+    const uid = currentUserId();
+    if (!uid) return;
+    const { start, end } = monthBounds(monthAnchor);
+    try {
+      const entries = await getFoodLogRange(uid, start, end);
+      setLoggedDays(new Set(entries.map((e) => e.date)));
+    } catch {
+      setLoggedDays(new Set());
+    }
+  }, []);
+
+  const openCalendar = () => {
+    setCalendarMonth(selectedDate);
+    setShowCalendar(true);
+    loadMonthDots(selectedDate);
+  };
+
+  const goToMonth = (delta: number) => {
+    const next = shiftMonth(calendarMonth, delta);
+    setCalendarMonth(next);
+    loadMonthDots(next);
+  };
+
+  const pickDay = (iso: string) => {
+    if (iso > todayISO()) return; // can't log the future
+    setSelectedDate(iso);
+    setShowCalendar(false);
   };
 
   // ── Saved meals ───────────────────────────────────────────────────────────
@@ -890,17 +962,14 @@ export default function NutritionScreen() {
           <TouchableOpacity style={styles.dayArrow} onPress={() => setSelectedDate(addDays(selectedDate, -1))}>
             <ChevronLeft size={18} color={colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.dayLabelBtn}
-            onPress={() => setSelectedDate(todayISO())}
-            disabled={selectedDate === todayISO()}
-          >
-            <Typography variant="bodyBold" style={{ fontSize: 14 }}>{dayLabel(selectedDate)}</Typography>
-            {selectedDate !== todayISO() && (
-              <Typography variant="caption" color={colors.warning} style={{ fontSize: 10 }}>
-                Tap to jump back to today
-              </Typography>
-            )}
+          <TouchableOpacity style={styles.dayLabelBtn} onPress={openCalendar}>
+            <View style={styles.dayLabelRow}>
+              <CalendarDays size={14} color={colors.warning} />
+              <Typography variant="bodyBold" style={{ fontSize: 14 }}>{dayLabel(selectedDate)}</Typography>
+            </View>
+            <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>
+              {selectedDate === todayISO() ? 'Tap for calendar' : fromISODate(selectedDate).toLocaleDateString('default', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </Typography>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.dayArrow, selectedDate >= todayISO() && styles.dayArrowDisabled]}
@@ -1066,6 +1135,71 @@ export default function NutritionScreen() {
             );
           })}
         </ScrollView>
+
+        {/* Month grid — pick any past day; dots mark the days you logged food. */}
+        <Modal visible={showCalendar} transparent animationType="fade" onRequestClose={() => setShowCalendar(false)}>
+          <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setShowCalendar(false)}>
+            <TouchableOpacity style={styles.calendarCard} activeOpacity={1}>
+              <View style={styles.calendarHeader}>
+                <TouchableOpacity style={styles.dayArrow} onPress={() => goToMonth(-1)}>
+                  <ChevronLeft size={18} color={colors.text} />
+                </TouchableOpacity>
+                <Typography variant="bodyBold">
+                  {fromISODate(calendarMonth).toLocaleDateString('default', { month: 'long', year: 'numeric' })}
+                </Typography>
+                <TouchableOpacity
+                  style={[styles.dayArrow, monthBounds(calendarMonth).start >= monthBounds(todayISO()).start && styles.dayArrowDisabled]}
+                  onPress={() => goToMonth(1)}
+                  disabled={monthBounds(calendarMonth).start >= monthBounds(todayISO()).start}
+                >
+                  <ChevronRight size={18} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.calendarWeekRow}>
+                {WEEKDAY_INITIALS.map((d, i) => (
+                  <Text key={i} style={styles.calendarWeekday}>{d}</Text>
+                ))}
+              </View>
+
+              <View style={styles.calendarGrid}>
+                {monthGrid(calendarMonth).map((iso, i) => {
+                  if (!iso) return <View key={`blank-${i}`} style={styles.calendarCell} />;
+                  const isFuture = iso > todayISO();
+                  const isSelected = iso === selectedDate;
+                  const isToday = iso === todayISO();
+                  return (
+                    <TouchableOpacity
+                      key={iso}
+                      style={styles.calendarCell}
+                      onPress={() => pickDay(iso)}
+                      disabled={isFuture}
+                    >
+                      <View style={[
+                        styles.calendarDay,
+                        isToday && styles.calendarDayToday,
+                        isSelected && styles.calendarDaySelected,
+                      ]}>
+                        <Text style={[
+                          styles.calendarDayText,
+                          isFuture && styles.calendarDayTextMuted,
+                          isSelected && styles.calendarDayTextSelected,
+                        ]}>
+                          {fromISODate(iso).getDate()}
+                        </Text>
+                      </View>
+                      <View style={[styles.calendarDot, loggedDays.has(iso) && styles.calendarDotOn]} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <TouchableOpacity style={styles.calendarTodayBtn} onPress={() => pickDay(todayISO())}>
+                <Typography variant="bodyBold" color={colors.warning} style={{ fontSize: 13 }}>Jump to today</Typography>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
 
         {/* Name-this-meal sheet (Alert.prompt is iOS-only, so it's a modal). */}
         <Modal visible={!!saveMealFor} transparent animationType="slide" onRequestClose={() => setSaveMealFor(null)}>
@@ -1615,6 +1749,46 @@ const styles = StyleSheet.create({
   },
   dayArrowDisabled: { opacity: 0.35 },
   dayLabelBtn: { alignItems: 'center', flex: 1 },
+  dayLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+
+  // Month grid picker
+  calendarCard: {
+    width: '100%',
+    maxWidth: 380,
+    alignSelf: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  calendarWeekRow: { flexDirection: 'row' },
+  calendarWeekday: {
+    flex: 1,
+    textAlign: 'center',
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calendarCell: { width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 3 },
+  calendarDay: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDayToday: { borderWidth: 1, borderColor: colors.warning },
+  calendarDaySelected: { backgroundColor: colors.warning },
+  calendarDayText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  calendarDayTextMuted: { color: colors.textMuted, opacity: 0.4 },
+  calendarDayTextSelected: { color: colors.bg, fontWeight: '800' },
+  calendarDot: { width: 4, height: 4, borderRadius: 2, marginTop: 3, backgroundColor: 'transparent' },
+  calendarDotOn: { backgroundColor: colors.warning },
+  calendarTodayBtn: { alignItems: 'center', paddingVertical: 8 },
 
   // Sugar / sodium / fibre strip
   microRow: {
