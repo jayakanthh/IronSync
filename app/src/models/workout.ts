@@ -12,6 +12,9 @@ export interface Exercise {
   instructions?: string[];
   images?: string[]; // demo image URLs (from free-exercise-db)
   gifUrl?: string | null; // library thumbnail (first image)
+  /** How-to video (YouTube or direct link). Nothing seeds this yet — the
+   *  detail screen shows a "Watch how-to" button when it's filled in. */
+  videoUrl?: string | null;
   isCustom: boolean;
   createdBy?: string | null; // userId, or null for built-in / seeded
   legacyIds?: string[]; // for migrating old IDs without breaking history

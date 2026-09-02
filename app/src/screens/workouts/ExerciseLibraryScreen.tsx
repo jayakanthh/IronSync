@@ -6,6 +6,7 @@ import { Search, Bookmark, Check, Plus, X, Star, Dumbbell } from 'lucide-react-n
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, spacing, radius } from '../../theme/colors';
 import { useCurrentUser } from '../../context/CurrentUser';
+import { useNavigation } from '@react-navigation/native';
 import { getExercisesByIds, getUserRecentExercises, getMyPlans, updatePlan } from '../../services/index';
 import type { Exercise, MuscleGroup } from '../../types/ironsync';
 import type { Plan } from '../../models/index';
@@ -43,6 +44,7 @@ export default function ExerciseLibraryScreen({
   onSearchChange,
 }: ExerciseLibraryScreenProps) {
   const { profile } = useCurrentUser();
+  const navigation = useNavigation<any>();
   // Drives the floating Start-New-Workout pill: it slides away as you scroll down.
   const scrollProps = useStartWorkoutScroll();
   const [searchQuery, setSearchQuery] = useState('');
@@ -305,7 +307,14 @@ export default function ExerciseLibraryScreen({
                 <TouchableOpacity
                   key={exercise.id}
                   style={styles.exerciseCard}
-                  onPress={() => setActiveDetail(exercise)}
+                  // Browsing → the full exercise page (how to do it, what it
+                  // works, your history). Picking for a routine → the quick
+                  // in-place peek, so you don't lose your place in the picker.
+                  onPress={() =>
+                    onAddExerciseToRoutine
+                      ? setActiveDetail(exercise)
+                      : navigation.navigate('ExerciseDetail', { exerciseId: exercise.id })
+                  }
                   activeOpacity={0.85}
                 >
                   <View style={styles.exerciseLeft}>
