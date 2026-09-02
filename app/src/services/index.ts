@@ -12,6 +12,7 @@ export * from './workouts/plans';
 export * from './duo/groups';
 export * from './users/friends';
 export * from './nutrition/nutrition';
+export * from './nutrition/barcode';
 export * from './workouts/streaks';
 export * from '../utils/formatting/dates';
 export * from './community/community';

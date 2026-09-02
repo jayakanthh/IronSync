@@ -20,6 +20,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "IronSync uses the camera to scan barcodes on food packaging."
+        }
+      ]
+    ]
   }
 }

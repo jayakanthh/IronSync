@@ -16,13 +16,14 @@ import Svg, { Circle, G } from 'react-native-svg';
 import {
   Utensils, Plus, Sparkles, Flame, Droplets, Trash2,
   Bot, ChevronDown, ChevronUp, Check, Search, ArrowLeft, Heart, Edit2, Info, TrendingUp,
-  ChevronLeft, ChevronRight, Bookmark, Copy, Minus, CalendarDays
+  ChevronLeft, ChevronRight, Bookmark, Copy, Minus, CalendarDays, ScanLine
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../theme/colors';
 import { Card } from '../../components/ui/Card';
 import AnimatedRing from '../../components/ui/AnimatedRing';
 import AnimatedBar from '../../components/ui/AnimatedBar';
+import BarcodeScanner from '../../components/common/BarcodeScanner';
 import { Button } from '../../components/ui/Button';
 import { Typography } from '../../components/ui/Typography';
 import type { FoodLogEntry, Goal, Meal, NutritionTargets, FoodProduct, SavedMeal } from '../../models/index';
@@ -31,7 +32,7 @@ import {
   logFood, setNutritionTargets, sumDay, sumMicros, todayISO, addDays, fromISODate,
   seedFoodDatabase, searchFoods, createCustomFood, getCustomFoods,
   getRecentFoods, getFrequentFoods, getFavoriteFoods, toggleFavoriteFood,
-  updateCustomFood, deleteCustomFood,
+  updateCustomFood, deleteCustomFood, lookupBarcode,
   getWater, setWater, suggestWaterTarget, getWaterPrefs, setWaterPrefs, getFoodLogRange,
   saveMeal, getSavedMeals, deleteSavedMeal, logSavedMeal, copyMealFromDate
 } from '../../services/index';
@@ -284,6 +285,9 @@ export default function NutritionScreen() {
   const [showCustomModal, setShowCustomModal] = useState(false);
   // Set when the custom-food form is editing an existing one rather than creating.
   const [editingCustomFood, setEditingCustomFood] = useState<FoodProduct | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [customName, setCustomName] = useState('');
   const [customBrand, setCustomBrand] = useState('');
   const [customSize, setCustomSize] = useState('100');
@@ -676,6 +680,57 @@ export default function NutritionScreen() {
     }
   };
 
+  /**
+   * A scanned barcode: our library first, then Open Food Facts. A hit opens the
+   * normal log screen so portions and the meal slot work as usual; a miss offers
+   * to create the food with the barcode already attached.
+   */
+  const handleBarcode = async (barcode: string) => {
+    setScannerOpen(false);
+    setScanBusy(true);
+    try {
+      const result = await lookupBarcode(barcode);
+
+      if (result.status === 'found') {
+        setSelectedFood(result.food);
+        setLogQty(String(result.food.servingSize));
+        setLogUnit(result.food.servingUnit);
+        setIsFavorite(false);
+        setViewMode('detail');
+        if (result.source === 'openfoodfacts') {
+          Alert.alert(
+            'From Open Food Facts',
+            `${result.food.name}. These numbers are crowd-sourced — check them against the label and correct anything that's off before logging.`,
+          );
+        }
+        return;
+      }
+
+      if (result.status === 'error') {
+        Alert.alert('Lookup failed', 'Could not reach the food database. Check your connection and try again.');
+        return;
+      }
+
+      Alert.alert(
+        'Not found',
+        `Nothing matched barcode ${barcode}. Add it yourself and it'll be there next time.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Add it',
+            onPress: () => {
+              resetCustomForm();
+              setScannedBarcode(barcode);
+              setShowCustomModal(true);
+            },
+          },
+        ],
+      );
+    } finally {
+      setScanBusy(false);
+    }
+  };
+
   // ── Detail & Scaling Logic ────────────────────────────────────────────────
   const scaledMacros = useMemo(() => {
     if (!selectedFood) return { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugar: 0, sodium: 0 };
@@ -766,6 +821,7 @@ export default function NutritionScreen() {
     setCustomName(''); setCustomBrand(''); setCustomSize('100'); setCustomUnit('g');
     setCustomCal(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
     setCustomFiber(''); setCustomSugar(''); setCustomSodium('');
+    setScannedBarcode(null);
     setEditingCustomFood(null);
   };
 
@@ -806,6 +862,9 @@ export default function NutritionScreen() {
       fiber: customFiber.trim() ? parseFloat(customFiber) || 0 : undefined,
       sugar: customSugar.trim() ? parseFloat(customSugar) || 0 : undefined,
       sodium: customSodium.trim() ? parseFloat(customSodium) || 0 : undefined,
+      // Set when this food came from a barcode we couldn't find, so the next
+      // scan of the same product finds it.
+      barcode: scannedBarcode || editingCustomFood?.barcode || undefined,
     };
 
     setLoading(true);
@@ -1396,6 +1455,18 @@ export default function NutritionScreen() {
           </View>
         </View>
 
+        {/* Scan a barcode instead of typing */}
+        <TouchableOpacity style={styles.scanRow} onPress={() => setScannerOpen(true)} disabled={scanBusy}>
+          {scanBusy ? (
+            <ActivityIndicator color={colors.warning} size="small" />
+          ) : (
+            <ScanLine size={16} color={colors.warning} />
+          )}
+          <Typography variant="bodyBold" color={colors.warning} style={{ fontSize: 13 }}>
+            {scanBusy ? 'Looking it up…' : 'Scan a barcode'}
+          </Typography>
+        </TouchableOpacity>
+
         {/* Tab Row */}
         <View style={styles.searchTabs}>
           {(['search', 'recent', 'frequent', 'favorites', 'my_foods', 'meals'] as const).map((tab) => (
@@ -1520,6 +1591,12 @@ export default function NutritionScreen() {
           )}
         />
         )}
+
+        <BarcodeScanner
+          visible={scannerOpen}
+          onClose={() => setScannerOpen(false)}
+          onScanned={handleBarcode}
+        />
 
         {/* Custom Food Creation Modal */}
         <Modal visible={showCustomModal} transparent animationType="slide">
@@ -2071,6 +2148,19 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, color: colors.text, paddingVertical: spacing.sm, marginLeft: spacing.xs, fontSize: 16 },
   editFoodBtn: { paddingLeft: spacing.md, paddingVertical: 4 },
   deleteFoodBtn: { alignItems: 'center', paddingTop: 14 },
+  scanRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.warning,
+  },
   searchTabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border },
   searchTabItem: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm },
   searchTabActive: { borderBottomWidth: 2, borderBottomColor: colors.primary },
