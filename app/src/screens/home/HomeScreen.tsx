@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View, Switch } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useStartWorkoutScroll } from '../../components/common/StartWorkoutButton';
 import Svg, { Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -48,7 +47,6 @@ export default function HomeScreen({
   todaySubtitle,
   todayState,
 }: HomeScreenProps) {
-  const [showFriendsWorkouts, setShowFriendsWorkouts] = useState(true);
   // Drives the floating Start-New-Workout pill: it slides away as you scroll down.
   const scrollProps = useStartWorkoutScroll();
 
@@ -155,27 +153,12 @@ export default function HomeScreen({
         )}
       </View>
 
-      {/* RECENT WORKOUTS Section */}
+      {/* RECENT ACTIVITY — mine and everyone I train with, newest first */}
       <View style={styles.section}>
-        <View style={styles.sectionHeaderRow}>
-          <SectionHeader>RECENT WORKOUTS</SectionHeader>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Friends</Text>
-            <Switch
-              value={showFriendsWorkouts}
-              onValueChange={setShowFriendsWorkouts}
-              trackColor={{ false: colors.surfaceAlt, true: colors.primary + '80' }}
-              thumbColor={showFriendsWorkouts ? colors.primary : colors.textMuted}
-              style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
-            />
-          </View>
-        </View>
+        <SectionHeader>RECENT ACTIVITY</SectionHeader>
 
         <View style={{ gap: spacing.sm }}>
-          {((history || []).filter((item) => {
-            if (showFriendsWorkouts) return true;
-            return item.creatorName === user.name;
-          })).map((item) => (
+          {(history || []).map((item) => (
             <View key={item.id} style={styles.historyCard}>
               <View style={styles.historyCardHeader}>
                 <View style={styles.historyCardLeft}>
@@ -221,10 +204,7 @@ export default function HomeScreen({
               </View>
             </View>
           ))}
-          {((history || []).filter((item) => {
-            if (showFriendsWorkouts) return true;
-            return item.creatorName === user.name;
-          })).length === 0 && (
+          {(history || []).length === 0 && (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateText}>No recent workouts logged.</Text>
             </View>
