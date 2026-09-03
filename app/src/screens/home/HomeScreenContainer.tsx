@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import HomeScreen from './HomeScreen';
-import { initialUserProfile } from '../../data/mockData';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { userToProfile } from '../../adapters/adapters';
 import { startWorkout } from '../../utils/startWorkout';
@@ -25,6 +24,23 @@ import type { AppNotification } from '../../models/index';
 import { useTheme } from '../../theme/colors';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Neutral defaults for the parts of the UI view-model the backend doesn't track. */
+const EMPTY_PROFILE: UserProfile = {
+  id: '',
+  name: '',
+  avatar: '',
+  email: '',
+  currentWeight: 0,
+  targetWeight: 0,
+  weightChangeThisWeek: 0,
+  weightPacingAhead: 0,
+  goalDays: 0,
+  goalTargetDate: '',
+  goalProgressPercent: 0,
+  caloriesToday: 0,
+  activityMinutesToday: 0,
+};
 
 export default function HomeScreenContainer({ navigation }: { navigation: NavigationProp<any> }) {
   const { theme } = useTheme();
@@ -103,7 +119,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
             title: w.planName || 'Workout Session',
             notes: w.notes || '',
             mode: w.workoutType || (w.sessionId ? 'duo' : 'solo'),
-            durationMinutes: w.durationMinutes || 45,
+            durationMinutes: w.durationMinutes ?? 0,
             totalSets: w.entries.reduce((sum, entry) => sum + entry.sets.length, 0),
             volumeKg: w.totalVolumeKg || 0,
             displayDate: new Date(w.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
@@ -121,7 +137,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
         title: w.planName || 'Workout Session',
         notes: w.notes || '',
         mode: w.sessionId ? 'duo' : 'solo',
-        durationMinutes: w.durationMinutes || 45,
+        durationMinutes: w.durationMinutes ?? 0,
         totalSets: w.entries.reduce((sum, entry) => sum + entry.sets.length, 0),
         volumeKg: w.totalVolumeKg || 0,
         displayDate: new Date(w.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
@@ -146,7 +162,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
             trainingNowMap.set(member.userId, {
               id: member.userId,
               name: member.displayName,
-              avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', // placeholder avatar
+              avatar: '', // Avatar resolves the real one from their public profile
               status: 'in-workout',
               activityTitle: member.currentActivity || 'Training Now',
               streakDays: 0,
@@ -176,9 +192,10 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
     );
   }
 
-  // Construct UserProfile for the view
+  // The view-model wants more fields than we track; the ones we don't are
+  // zeroed rather than filled with plausible-looking numbers.
   const user: UserProfile = {
-    ...initialUserProfile,
+    ...EMPTY_PROFILE,
     id: profile.id,
     name: profile.displayName,
     email: profile.email,

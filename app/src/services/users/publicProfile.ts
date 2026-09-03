@@ -95,7 +95,8 @@ export async function getPublicProfile(userId: string): Promise<PublicProfile | 
     const value = snap.exists() ? (snap.data() as PublicProfile) : null;
     cache.set(userId, value); // remember misses too, or we re-read forever
     return value;
-  } catch {
+  } catch (err: any) {
+    console.warn('[getPublicProfile] failed:', err?.message ?? err);
     return null;
   }
 }

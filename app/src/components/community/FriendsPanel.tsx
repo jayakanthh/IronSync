@@ -10,7 +10,7 @@ import {
 import { colors, spacing, radius } from '../../theme/colors';
 import { Card } from '../ui/Card';
 import Avatar from '../common/Avatar';
-import { getFriends, getWorkoutHistory } from '../../services/index';
+import { getFriends, getFriendWorkouts } from '../../services/index';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { useNavigation } from '@react-navigation/native';
 import { getRelativeTime } from '../../utils/formatting/relativeTime';
@@ -39,7 +39,7 @@ export default function FriendsPanel() {
         try {
           // Their last workout is only used to date the status line — the workout
           // itself is on their profile, one tap away.
-          const history = await getWorkoutHistory(friend.friendId);
+          const history = await getFriendWorkouts(friend.friendId, 1);
           const lastActiveTime = history?.length ? history[0].createdAt || Date.now() : null;
 
           details[friend.friendId] = {

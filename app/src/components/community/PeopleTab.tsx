@@ -8,7 +8,7 @@ import { TAB_BAR_SPACE } from '../../theme/layout';
 import { Search, UserPlus, Play } from 'lucide-react-native';
 
 import type { Community, CommunityMember, Workout, Exercise } from '../../models/index';
-import { getExercisesByIds, getWorkoutHistory } from '../../services/index';
+import { getExercisesByIds, getFriendWorkouts } from '../../services/index';
 import { getRelativeTime } from '../../utils/formatting/relativeTime';
 import { getCommunityMembers } from '../../services/community/community';
 import { getAvatarBg } from '../../utils/formatting/avatarColors';
@@ -83,7 +83,8 @@ const RecentlyActiveBodyViz = ({ userId }: { userId: string }) => {
     let active = true;
     async function resolveRecentMuscles() {
       try {
-        const history = await getWorkoutHistory(userId, 1);
+        // Only what they've shared — their own history is owner-only.
+        const history = await getFriendWorkouts(userId, 1);
         if (!active || history.length === 0) return;
         const lastWkt = history[0];
         const exIds = lastWkt.entries.map(e => e.exerciseId);

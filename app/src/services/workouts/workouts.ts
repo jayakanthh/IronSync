@@ -219,7 +219,12 @@ export async function getFriendWorkouts(friendId: string, max = 10): Promise<Wor
     );
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Workout, 'id'>) }));
-  } catch {
+  } catch (err: any) {
+    // Not a friend, or they don't share — both are legitimately empty. Anything
+    // else is a bug, and silence made those two look the same.
+    if (err?.code !== 'permission-denied') {
+      console.warn('[getFriendWorkouts] failed:', err?.message ?? err);
+    }
     return [];
   }
 }

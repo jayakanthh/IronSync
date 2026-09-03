@@ -1,5 +1,6 @@
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useStartWorkoutScroll } from '../../components/common/StartWorkoutButton';
+import Avatar from '../../components/common/Avatar';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Sparkles,
@@ -14,7 +15,7 @@ import {
 import { colors, radius, spacing } from '../../theme/colors';
 import { SectionHeader } from '../../components/ui/index';
 import type { UserProfile, TrainingBuddy } from '../../types/ironsync';
-import { WorkoutHistoryItemWithCreator } from '../../data/mockData';
+import { WorkoutHistoryItemWithCreator } from '../../types/ironsync';
 
 interface HomeScreenProps {
   user: UserProfile;
@@ -169,7 +170,9 @@ export default function HomeScreen({
               <View style={styles.historyStatsRow}>
                 <View style={styles.historyStatCol}>
                   <Text style={styles.historyStatLabel}>DURATION</Text>
-                  <Text style={styles.historyStatValue}>{item.durationMinutes}m</Text>
+                  <Text style={styles.historyStatValue}>
+                    {item.durationMinutes > 0 ? `${item.durationMinutes}m` : '—'}
+                  </Text>
                 </View>
                 <View style={styles.historyStatCol}>
                   <Text style={styles.historyStatLabel}>SETS</Text>
@@ -208,7 +211,7 @@ export default function HomeScreen({
               >
                 <View style={styles.buddyLeft}>
                   <View>
-                    <Image source={{ uri: buddy.avatar }} style={styles.buddyAvatar} />
+                    <Avatar name={buddy.name} userId={buddy.id} size={40} />
                     <View style={styles.onlineDot} />
                   </View>
                   <View>

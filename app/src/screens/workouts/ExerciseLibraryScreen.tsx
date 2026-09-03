@@ -456,10 +456,13 @@ export default function ExerciseLibraryScreen({
 
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: spacing.md }}>
                 <Image source={{ uri: activeDetail.image }} style={styles.modalImage} />
-                <Text style={styles.modalDesc}>
-                  {activeDetail.description ||
-                    'High activation movement designed for specific target muscle fiber recruitment, hypertrophy, and strength development.'}
-                </Text>
+                {activeDetail.description ? (
+                  <Text style={styles.modalDesc}>{activeDetail.description}</Text>
+                ) : (
+                  <Text style={[styles.modalDesc, { fontStyle: 'italic' }]}>
+                    No description on file for this exercise yet.
+                  </Text>
+                )}
 
                 {!!activeDetail.tips && activeDetail.tips.length > 0 && (
                   <View style={styles.tipsBox}>

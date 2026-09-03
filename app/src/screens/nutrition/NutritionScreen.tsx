@@ -30,7 +30,7 @@ import type { FoodLogEntry, Goal, Meal, NutritionTargets, FoodProduct, SavedMeal
 import {
   currentUserId, deleteFood, getFoodLog, getNutritionTargets,
   logFood, setNutritionTargets, sumDay, sumMicros, todayISO, addDays, fromISODate,
-  seedFoodDatabase, searchFoods, createCustomFood, getCustomFoods,
+  searchFoods, createCustomFood, getCustomFoods,
   getRecentFoods, getFrequentFoods, getFavoriteFoods, toggleFavoriteFood,
   updateCustomFood, deleteCustomFood, lookupBarcode,
   getWater, setWater, suggestWaterTarget, getWaterPrefs, setWaterPrefs, getFoodLogRange,
@@ -318,18 +318,6 @@ export default function NutritionScreen() {
   const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
   const [saveMealFor, setSaveMealFor] = useState<Meal | null>(null);
   const [saveMealName, setSaveMealName] = useState('');
-
-  // Initial seed and load
-  useEffect(() => {
-    async function initDb() {
-      try {
-        await seedFoodDatabase();
-      } catch (err) {
-        console.error("Error seeding food database:", err);
-      }
-    }
-    initDb();
-  }, []);
 
   const loadData = useCallback(async () => {
     const uid = currentUserId();
