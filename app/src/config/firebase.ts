@@ -11,6 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp } from 'firebase/app';
 import * as fbAuth from 'firebase/auth';
 import { getFirestore, initializeFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import { firebaseConfig } from './firebaseConfig';
 
 const app = initializeApp(firebaseConfig);
@@ -54,5 +55,8 @@ function makeDb() {
   }
 }
 export const db = makeDb();
+
+/** Cloud Storage — profile photos live at avatars/{uid} (see backend/storage.rules). */
+export const storage = getStorage(app);
 
 export default app;

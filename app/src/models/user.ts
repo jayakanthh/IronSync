@@ -31,6 +31,9 @@ export interface User {
    *  DEFAULT_PRIVACY — see services/users/privacy.ts. */
   privacy?: PrivacySettings;
 
+  /** Download URL of the profile photo at avatars/{uid}. Absent = initials. */
+  photoURL?: string;
+
   username?: string;
   normalizedUsername?: string;
   

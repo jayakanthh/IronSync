@@ -47,7 +47,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           onPress={onAvatarPress} 
           style={[styles.avatarContainer, { borderColor: theme.colors.primary + '4d' }]}
         >
-          <Avatar name={user.name} size={36} />
+          <Avatar name={user.name} uri={user.avatar} size={36} />
         </TouchableOpacity>
         
         <View style={styles.logoContainer}>

@@ -172,6 +172,8 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
     id: profile.id,
     name: profile.displayName,
     email: profile.email,
+    // The mock profile carries a stock photo; only a real uploaded one counts.
+    avatar: profile.photoURL || '',
     currentWeight: profile.weightKg || 75,
     caloriesToday: calories,
   };

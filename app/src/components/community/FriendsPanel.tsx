@@ -89,7 +89,7 @@ export default function FriendsPanel() {
             >
               <Card style={styles.friendCard}>
                 <View style={styles.friendHeader}>
-                  <Avatar name={f.name} size={40} />
+                  <Avatar name={f.name} userId={f.friendId} size={40} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{f.name}</Text>
                     <View style={styles.statusRow}>

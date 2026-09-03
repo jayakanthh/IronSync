@@ -622,7 +622,7 @@ export default function ProfileScreen() {
       {/* Top Header */}
       <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
         <View style={styles.headerUser}>
-          <Avatar name={profile.displayName} size={44} />
+          <Avatar name={profile.displayName} uri={profile.photoURL} size={44} />
           <View style={styles.userInfo}>
             <Text style={[styles.userName, { color: theme.colors.textPrimary }]} numberOfLines={1}>
               {profile.displayName || 'Iron Athlete'}

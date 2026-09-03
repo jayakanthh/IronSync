@@ -15,6 +15,8 @@ import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Scale, Bell, Shield, Info, ChevronRight, ChevronLeft, Check, X, Edit2, Palette, Mail, Lock } from "lucide-react-native";
 import { colors, spacing, radius } from "../../theme/colors";
+import * as ImagePicker from "expo-image-picker";
+import Avatar from "../../components/common/Avatar";
 import { useCurrentUser } from "../../context/CurrentUser";
 import type { PrivacySettings, ShareLevel } from "../../models/index";
 import { 
@@ -22,6 +24,8 @@ import {
   changeEmail,
   changePassword,
   sendResetEmail,
+  uploadAvatar,
+  removeAvatar,
   resolvePrivacy,
   setPrivacy,
   isUsernameAvailable, 
@@ -75,6 +79,7 @@ export default function SettingsScreen() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   // Username edit states
   const [editingUsername, setEditingUsername] = useState(false);
@@ -171,6 +176,51 @@ export default function SettingsScreen() {
       setStatsVisible(!val); // revert on failure
       Alert.alert("Error", "Could not update your privacy setting. Please try again.");
     }
+  };
+
+  const pickPhoto = async () => {
+    if (!profile) return;
+    // Cropping to a square up front means we upload roughly what we display,
+    // instead of a 4MB camera original.
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.6,
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    setPhotoBusy(true);
+    try {
+      await uploadAvatar(profile.id, result.assets[0].uri);
+      await refresh();
+    } catch (e: any) {
+      Alert.alert("Upload failed", e?.message ?? "Could not upload that photo. Try again.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const handlePhotoPress = () => {
+    if (!profile?.photoURL) return pickPhoto();
+    Alert.alert("Profile photo", undefined, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Choose a new one", onPress: pickPhoto },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          if (!profile) return;
+          setPhotoBusy(true);
+          try {
+            await removeAvatar(profile.id);
+            await refresh();
+          } finally {
+            setPhotoBusy(false);
+          }
+        },
+      },
+    ]);
   };
 
   const handlePrivacyChange = async (key: keyof PrivacySettings, value: ShareLevel) => {
@@ -297,6 +347,18 @@ export default function SettingsScreen() {
           <>
             <Text style={styles.sectionLabel}>ACCOUNT</Text>
             <View style={styles.card}>
+              <TouchableOpacity style={[styles.photoRow, styles.rowBorder]} onPress={handlePhotoPress} disabled={photoBusy}>
+                <View style={styles.toggleLeft}>
+                  <Avatar name={profile.displayName} uri={profile.photoURL} size={52} />
+                  <View>
+                    <Text style={styles.toggleLabel}>Profile photo</Text>
+                    <Text style={styles.toggleSub}>
+                      {profile.photoURL ? "Tap to change or remove" : "Tap to add one"}
+                    </Text>
+                  </View>
+                </View>
+                {photoBusy ? <ActivityIndicator color={colors.primary} /> : <ChevronRight size={16} color={colors.textMuted} />}
+              </TouchableOpacity>
               <Row label="Name" value={profile.displayName} />
               <Row label="Email" value={profile.email} />
               
@@ -740,6 +802,13 @@ const styles = StyleSheet.create({
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   rowLabel: { color: colors.textMuted, fontSize: 15 },
   rowValue: { color: colors.text, fontSize: 15, fontWeight: "600", maxWidth: "60%" },
+  photoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
   actionRow: {
     flexDirection: "row",
     alignItems: "center",

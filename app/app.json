@@ -27,6 +27,12 @@
         {
           "cameraPermission": "IronSync uses the camera to scan barcodes on food packaging."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "IronSync uses your photos so you can set a profile picture."
+        }
       ]
     ]
   }
