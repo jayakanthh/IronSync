@@ -1113,7 +1113,10 @@ export default function ProfileScreen() {
                         {activeGoal.type === 'lose_weight' ? 'Weight Loss Target' : activeGoal.type === 'gain_weight' ? 'Weight Gain Target' : 'Body Weight Target'}
                       </Text>
                     </View>
-                    <Target size={18} color={colors.primary} />
+                    <View style={styles.goalTopIcons}>
+                      <Target size={18} color={colors.primary} />
+                      <ChevronRight size={16} color={colors.textMuted} />
+                    </View>
                   </View>
                   <View style={styles.goalBodyRow}>
                     <Text style={styles.goalDetailVal}>
@@ -1122,9 +1125,6 @@ export default function ProfileScreen() {
                     <Text style={styles.goalCurrentVal}>
                       Start: {convertWeightToDisplay(activeGoal.startValue, system)} {getWeightUnit(system)}
                     </Text>
-                  </View>
-                  <View style={styles.goalEditRow}>
-                    <ChevronRight size={16} color={colors.primary} />
                   </View>
                 </TouchableOpacity>
               ) : (
@@ -1455,7 +1455,7 @@ const styles = StyleSheet.create({
 
   goalPremiumCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: 10 },
   goalTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  goalEditRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6 },
+  goalTopIcons: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   goalLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   goalTitle: { color: colors.text, fontSize: 15, fontWeight: '800', marginTop: 1 },
   goalBodyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
