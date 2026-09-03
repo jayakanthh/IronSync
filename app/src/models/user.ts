@@ -27,12 +27,35 @@ export interface User {
   savedPlanIds?: string[]; // public plans the user has bookmarked (Workouts > Saved tab)
   unitSystem?: 'metric' | 'imperial';
   statsVisibleToFriends?: boolean; // let friends see your streak/stats on your profile (default: visible)
+  /** Per-area sharing. Anything unset falls back to the defaults in
+   *  DEFAULT_PRIVACY — see services/users/privacy.ts. */
+  privacy?: PrivacySettings;
 
   username?: string;
   normalizedUsername?: string;
   
   // body progress & energy profile
   activityLevel?: 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active';
+}
+
+/** Who can see one kind of data. */
+export type ShareLevel = 'only_me' | 'friends' | 'everyone';
+
+/**
+ * What you share, area by area. Health notes are deliberately absent: they are
+ * never shareable, and firestore.rules keeps them owner-only regardless.
+ */
+export interface PrivacySettings {
+  /** Your logged sessions in friends' feeds and on your profile. */
+  workouts: ShareLevel;
+  /** Personal records and the crew leaderboard. */
+  personalRecords: ShareLevel;
+  /** Current streak on your profile. */
+  streak: ShareLevel;
+  /** Bodyweight and measurements. */
+  measurements: ShareLevel;
+  /** Calories and macros. */
+  nutrition: ShareLevel;
 }
 
 /** A body measurement snapshot over time. */

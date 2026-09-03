@@ -6,7 +6,7 @@
  */
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { User } from '../models';
-import { getUser, onAuthChange } from '../services';
+import { getUser, onAuthChange, syncEmail } from '../services';
 
 interface CurrentUserState {
   loading: boolean; // still resolving auth state on launch
@@ -33,7 +33,11 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
       if (fbUser) {
         setUid(fbUser.uid);
         setAuthed(true);
-        setProfile(await getUser(fbUser.uid));
+        const loaded = await getUser(fbUser.uid);
+        // An email change is confirmed by clicking a link in a mail client, which
+        // the app never sees — so the profile catches up here, at the next sign-in.
+        const synced = loaded ? await syncEmail(fbUser.uid, loaded.email) : null;
+        setProfile(synced && loaded ? { ...loaded, email: synced } : loaded);
       } else {
         setUid(null);
         setAuthed(false);
