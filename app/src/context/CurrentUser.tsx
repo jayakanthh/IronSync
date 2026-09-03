@@ -41,8 +41,8 @@ export function CurrentUserProvider({ children }: { children: ReactNode }) {
         // Keep the copy other people can read in step with the private profile.
         // It only writes when something actually differs.
         if (loaded) {
-          syncPublicProfile(fbUser.uid, loaded.displayName, loaded.username, loaded.photoURL).catch(
-            (err) => console.warn('[CurrentUser] public profile sync failed:', err?.message ?? err),
+          syncPublicProfile(loaded).catch((err) =>
+            console.warn('[CurrentUser] public profile sync failed:', err?.message ?? err),
           );
         }
       } else {

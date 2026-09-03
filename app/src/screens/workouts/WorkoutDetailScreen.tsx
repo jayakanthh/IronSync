@@ -6,7 +6,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, Calendar, Clock, TrendingUp, Zap, Award } from 'lucide-react-native';
 import { colors, spacing, radius } from '../../theme/colors';
-import { getWorkoutById, getExercisesByIds, getUser } from '../../services/index';
+import { getWorkoutById, getExercisesByIds, getPublicProfile } from '../../services/index';
 import type { Workout, Exercise, User } from '../../models/index';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
 
@@ -19,7 +19,7 @@ export default function WorkoutDetailScreen() {
 
   const [loading, setLoading] = useState(true);
   const [workout, setWorkout] = useState<Workout | null>(null);
-  const [userProfile, setUserProfile] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<{ displayName: string } | null>(null);
   const [exercises, setExercises] = useState<Record<string, Exercise>>({});
   const [musclePrimary, setMusclePrimary] = useState<Set<string>>(new Set());
   const [muscleSecondary, setMuscleSecondary] = useState<Set<string>>(new Set());
@@ -31,10 +31,13 @@ export default function WorkoutDetailScreen() {
         return;
       }
       try {
-        const [wkt, u] = await Promise.all([
+        const [wkt, pub] = await Promise.all([
           getWorkoutById(userId, workoutId),
-          getUser(userId)
+          // Only your own profile document is readable; everyone else's name
+          // comes from their public copy.
+          getPublicProfile(userId),
         ]);
+        const u = pub ? { displayName: pub.displayName } : null;
 
         if (wkt) {
           setWorkout(wkt);

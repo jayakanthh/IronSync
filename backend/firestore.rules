@@ -38,6 +38,16 @@ service cloud.firestore {
       }
     }
 
+    // ---- Username registry ----
+    // usernames/{normalized} -> { uid }. Readable by anyone signed in so the
+    // sign-up screen can tell you a handle is taken; claimable only by the
+    // person taking it, and never reassignable to someone else.
+    match /usernames/{name} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
     // ---- Public profiles ----
     // Name, username and avatar — the bits other people legitimately need to
     // render you in a list. Everything else about a user (email, weight, goals,

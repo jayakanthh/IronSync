@@ -31,7 +31,7 @@ export interface User {
    *  DEFAULT_PRIVACY — see services/users/privacy.ts. */
   privacy?: PrivacySettings;
 
-  /** Profile photo as a data URI (see services/users/avatar.ts). Absent = initials. */
+  /** Profile photo as a data URI (see services/users/publicProfile.ts). Absent = initials. */
   photoURL?: string;
 
   username?: string;
@@ -49,9 +49,18 @@ export interface PublicProfile {
   userId: string;
   displayName: string;
   username?: string;
+  /** Lowercased, '@' stripped — what username search matches against. */
+  normalizedUsername?: string;
   /** Small JPEG as a data URI — a few KB, well inside Firestore's 1MiB limit. */
   photo?: string;
   updatedAt: number;
+
+  // Published only while the owner's privacy settings allow it. Absent means
+  // "not shared", which is why every field here is optional.
+  currentStreak?: number;
+  longestStreak?: number;
+  lastTrainedDate?: string;
+  trainingDays?: Weekday[];
 }
 
 /** Who can see one kind of data. */

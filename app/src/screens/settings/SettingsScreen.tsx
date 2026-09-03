@@ -200,12 +200,7 @@ export default function SettingsScreen() {
         { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
       if (!shrunk.base64) throw new Error("Could not read that image.");
-      await setAvatar(
-        profile.id,
-        `data:image/jpeg;base64,${shrunk.base64}`,
-        profile.displayName,
-        profile.username,
-      );
+      await setAvatar(profile, `data:image/jpeg;base64,${shrunk.base64}`);
       await refresh();
     } catch (e: any) {
       Alert.alert("Could not save photo", e?.message ?? "Try a different image.");
@@ -226,7 +221,7 @@ export default function SettingsScreen() {
           if (!profile) return;
           setPhotoBusy(true);
           try {
-            await removeAvatar(profile.id, profile.displayName, profile.username);
+            await removeAvatar(profile);
             await refresh();
           } finally {
             setPhotoBusy(false);

@@ -20,7 +20,7 @@ export * from './community/community';
 export * from './users/follow';
 export * from './duo/duoSession';
 export { auth, db } from '../config/firebase';
-export * from './users/avatar';
+export * from './users/publicProfile';
 export * from './measurements/measurements';
 export * from './measurements/energy';
 export * from './notifications/notification';

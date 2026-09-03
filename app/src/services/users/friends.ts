@@ -25,48 +25,6 @@ import { getUser } from './users';
 
 const pairId = (a: string, b: string) => [a, b].sort().join('_');
 
-/** Send a friend request to a user found by email. Returns an error message or null. */
-export async function sendFriendRequest(
-  from: { id: string; name: string },
-  toEmail: string,
-): Promise<string | null> {
-  const snap = await getDocs(
-    query(collection(db, 'users'), where('email', '==', toEmail.trim().toLowerCase()), limit(1)),
-  );
-  if (snap.empty) return 'No IronSync user with that email.';
-  const target = snap.docs[0];
-  if (target.id === from.id) return "That's you!";
-
-  // already friends?
-  const existing = await getDocs(
-    query(collection(db, 'friendships'), where('members', 'array-contains', from.id)),
-  );
-  if (existing.docs.some((d) => (d.data().members as string[]).includes(target.id))) {
-    return 'You two are already friends.';
-  }
-
-  const ref = await addDoc(collection(db, 'friendRequests'), {
-    fromId: from.id,
-    fromName: from.name,
-    toId: target.id,
-    toName: target.get('displayName') ?? '',
-    createdAt: Date.now(),
-  });
-
-  // Trigger notification
-  await createNotification(target.id, {
-    fromUserId: from.id,
-    fromUserName: from.name,
-    title: 'Friend Request',
-    body: `${from.name} sent you a friend request.`,
-    type: 'friend_request',
-    data: { friendRequestId: ref.id }
-  });
-
-  return null;
-}
-
-/** Requests sent TO this user (to accept/decline). */
 export async function getIncomingRequests(userId: string): Promise<FriendRequest[]> {
   const snap = await getDocs(
     query(collection(db, 'friendRequests'), where('toId', '==', userId)),

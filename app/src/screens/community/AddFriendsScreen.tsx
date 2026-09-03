@@ -19,7 +19,7 @@ import {
   declineRequest,
 } from '../../services/index';
 import { useCurrentUser } from '../../context/CurrentUser';
-import type { FriendRequest, User } from '../../models/index';
+import type { PublicProfile, FriendRequest, User } from '../../models/index';
 
 /**
  * Add Friends — dedicated page opened from the Social > Friends header icon.
@@ -33,7 +33,8 @@ export default function AddFriendsScreen() {
   const [requests, setRequests] = useState<FriendRequest[]>([]);
   const [loadingReqs, setLoadingReqs] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<User[]>([]);
+  // Search returns public profiles — full user documents are owner-only.
+  const [searchResults, setSearchResults] = useState<PublicProfile[]>([]);
   const [searching, setSearching] = useState(false);
 
   const loadRequests = useCallback(async () => {
@@ -62,7 +63,7 @@ export default function AddFriendsScreen() {
     const delay = setTimeout(async () => {
       try {
         const results = await searchUsersByUsername(searchQuery);
-        setSearchResults(results.filter((u) => u.id !== profile?.id));
+        setSearchResults(results.filter((u) => u.userId !== profile?.id));
       } catch (e) {
         console.error(e);
       } finally {
@@ -120,10 +121,10 @@ export default function AddFriendsScreen() {
             ) : (
               searchResults.map((user) => (
                 <TouchableOpacity
-                  key={user.id}
+                  key={user.userId}
                   style={styles.row}
                   activeOpacity={0.7}
-                  onPress={() => navigation.navigate('UserProfile', { userId: user.id })}
+                  onPress={() => navigation.navigate('UserProfile', { userId: user.userId })}
                 >
                   <View style={styles.avatar}>
                     <Text style={styles.avatarText}>{(user.displayName || '?').slice(0, 2).toUpperCase()}</Text>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Image, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { getAvatarBg } from '../../utils/formatting/avatarColors';
-import { getAvatarUrl } from '../../services/users/avatar';
+import { getAvatarUrl } from '../../services/users/publicProfile';
 
 /**
  * A person's avatar: their initials on a colour derived from their name, which

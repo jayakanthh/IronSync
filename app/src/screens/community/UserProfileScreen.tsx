@@ -26,11 +26,35 @@ import {
   getFollowing,
   getWorkoutHistory,
   getFriendWorkouts,
+  getPublicProfile,
   getIncomingRequests,
   effectiveCurrentStreak,
   todayISO,
 } from "../../services/index";
-import type { User, Workout } from "../../models/index";
+import type { PublicProfile, User, Workout } from "../../models/index";
+
+/**
+ * Shape a public profile like a User so the screen below can stay as it is.
+ * Anything the owner doesn't share simply isn't there, and reads as zero.
+ */
+function publicToUser(pub: PublicProfile | null): User | null {
+  if (!pub) return null;
+  return {
+    id: pub.userId,
+    displayName: pub.displayName,
+    email: '',
+    username: pub.username,
+    photoURL: pub.photo,
+    createdAt: 0,
+    groupIds: [],
+    trainingDays: pub.trainingDays ?? [],
+    currentStreak: pub.currentStreak ?? 0,
+    longestStreak: pub.longestStreak ?? 0,
+    lastTrainedDate: pub.lastTrainedDate,
+    // No streak published means they've kept it to themselves.
+    statsVisibleToFriends: pub.currentStreak !== undefined,
+  } as User;
+}
 
 export default function UserProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -58,7 +82,9 @@ export default function UserProfileScreen() {
     setLoading(true);
     try {
       const [u, isFollowingCheck, followers, following, wList] = await Promise.all([
-        getUser(targetUserId),
+        // Someone else's profile document is owner-only; the public copy is
+        // what they've chosen to publish. Your own still comes from the real one.
+        isMe ? getUser(targetUserId) : publicToUser(await getPublicProfile(targetUserId)),
         isFollowing(profile.id, targetUserId),
         getFollowers(targetUserId),
         getFollowing(targetUserId),
