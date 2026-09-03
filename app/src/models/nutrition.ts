@@ -26,6 +26,9 @@ export interface FoodProduct {
   sodium?: number;
   barcode?: string;
   image?: string;
+  /** Words and word-prefixes of the name/brand — how search finds this food.
+   *  Built by buildSearchTokens(); absent on anything saved before it existed. */
+  searchTokens?: string[];
   source: string; // 'seeded' | 'custom'
   verified: boolean;
   createdBy?: string; // userId if custom

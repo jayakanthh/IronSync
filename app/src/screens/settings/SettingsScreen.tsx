@@ -346,6 +346,15 @@ export default function SettingsScreen() {
             </View>
             <Text style={styles.infoValue}>1.0.0</Text>
           </View>
+
+          {/* ODbL asks for attribution wherever their data is used. */}
+          <View style={styles.infoRow}>
+            <View style={styles.toggleLeft}>
+              <Info size={16} color={colors.textMuted} />
+              <Text style={styles.toggleLabel}>Food data</Text>
+            </View>
+            <Text style={styles.infoValue}>Open Food Facts (ODbL)</Text>
+          </View>
         </View>
 
         {/* Logout */}

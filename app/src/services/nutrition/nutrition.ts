@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import type { FoodLogEntry, NutritionTargets, FoodProduct, SavedMeal, SavedMealItem, WaterPrefs } from '../../models/index';
 import { db } from '../../config/firebase';
+import { buildSearchTokens, queryToken } from '../../utils/formatting/searchTokens';
 
 const targetsRef = (userId: string) =>
   doc(db, 'users', userId, 'meta', 'nutritionTargets');
@@ -359,6 +360,17 @@ export async function seedFoodDatabase(): Promise<void> {
 }
 
 /** Search global food database + user custom foods. */
+/**
+ * Find foods by name or brand, across the shared library and the user's own.
+ *
+ * Two passes per collection because Firestore can't do full-text search:
+ *  · array-contains on searchTokens — matches a word anywhere in the name, so
+ *    "milk" finds "Amul Taaza Milk";
+ *  · the original prefix scan on normalizedName, kept so foods saved before
+ *    tokens existed still turn up.
+ *
+ * Results are ranked so what you typed first appears first.
+ */
 export async function searchFoods(
   queryText: string,
   userId: string,
@@ -367,32 +379,41 @@ export async function searchFoods(
   const clean = queryText.toLowerCase().trim();
   if (!clean) return [];
 
-  // Prefix query for search
+  const token = queryToken(clean);
   const end = clean + '\uf8ff';
+  const foodsCol = collection(db, 'foods');
+  const customCol = collection(db, 'users', userId, 'customFoods');
 
-  // 1. Search global foods by normalized name prefix
-  const globalQ = query(
-    collection(db, 'foods'),
-    where('normalizedName', '>=', clean),
-    where('normalizedName', '<=', end),
-    limit(max),
-  );
-  const globalSnap = await getDocs(globalQ);
-  const globalResults = globalSnap.docs.map((d) => d.data() as FoodProduct);
+  const runs: Promise<FoodProduct[]>[] = [];
+  const collect = (q: ReturnType<typeof query>) =>
+    getDocs(q)
+      .then((snap) => snap.docs.map((d) => d.data() as FoodProduct))
+      .catch(() => [] as FoodProduct[]); // one failed pass shouldn't empty the results
 
-  // 2. Search user custom foods by normalized name prefix
-  const customQ = query(
-    collection(db, 'users', userId, 'customFoods'),
-    where('normalizedName', '>=', clean),
-    where('normalizedName', '<=', end),
-    limit(max),
-  );
-  const customSnap = await getDocs(customQ);
-  const customResults = customSnap.docs.map((d) => d.data() as FoodProduct);
+  if (token) {
+    runs.push(collect(query(foodsCol, where('searchTokens', 'array-contains', token), limit(max))));
+    runs.push(collect(query(customCol, where('searchTokens', 'array-contains', token), limit(max))));
+  }
+  runs.push(collect(query(foodsCol, where('normalizedName', '>=', clean), where('normalizedName', '<=', end), limit(max))));
+  runs.push(collect(query(customCol, where('normalizedName', '>=', clean), where('normalizedName', '<=', end), limit(max))));
 
-  // Merge and limit
-  const merged = [...globalResults, ...customResults];
-  return merged.slice(0, max);
+  const byId = new Map<string, FoodProduct>();
+  for (const list of await Promise.all(runs)) {
+    for (const food of list) if (!byId.has(food.id)) byId.set(food.id, food);
+  }
+
+  // Rank: name starts with the query, then name contains it, then the rest.
+  // Within a tier, shorter names first — they're the plainer product.
+  const score = (f: FoodProduct) => {
+    const name = (f.normalizedName || f.name || '').toLowerCase();
+    if (name.startsWith(clean)) return 0;
+    if (name.includes(clean)) return 1;
+    if ((f.brand || '').toLowerCase().includes(clean)) return 2;
+    return 3;
+  };
+  return Array.from(byId.values())
+    .sort((a, b) => score(a) - score(b) || (a.name?.length ?? 0) - (b.name?.length ?? 0))
+    .slice(0, max);
 }
 
 // ─── User Custom Foods ────────────────────────────────────────────────────────
@@ -405,6 +426,7 @@ export async function createCustomFood(
   const ref = doc(collection(db, 'users', userId, 'customFoods'));
   const newFood: FoodProduct = {
     ...food,
+    searchTokens: buildSearchTokens(food.name, food.brand),
     id: ref.id,
     source: 'custom',
     verified: false,
@@ -424,7 +446,12 @@ export async function updateCustomFood(
 ): Promise<void> {
   await setDoc(
     doc(db, 'users', userId, 'customFoods', foodId),
-    { ...food, updatedAt: Date.now() },
+    {
+      ...food,
+      // Rebuild whenever the name or brand changes, or search goes stale.
+      ...(food.name || food.brand ? { searchTokens: buildSearchTokens(food.name, food.brand) } : {}),
+      updatedAt: Date.now(),
+    },
     { merge: true },
   );
 }
