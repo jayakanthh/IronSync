@@ -317,7 +317,20 @@ export default function GoalDetailsScreen() {
         {/* Actions */}
         <TouchableOpacity
           style={styles.outlineBtn}
-          onPress={() => navigation.navigate('GoalSetup')}
+          onPress={() =>
+            navigation.navigate('GoalSetup', {
+              prefill: {
+                startValue: goal.startValue,
+                targetValue: goal.targetValue,
+                // What's left of the original window, so a half-finished goal
+                // doesn't reset to six weeks.
+                days: Math.max(
+                  7,
+                  Math.round((goal.targetDate - Date.now()) / (24 * 60 * 60 * 1000)),
+                ),
+              },
+            })
+          }
         >
           <Text style={styles.outlineBtnText}>Edit Goal</Text>
         </TouchableOpacity>

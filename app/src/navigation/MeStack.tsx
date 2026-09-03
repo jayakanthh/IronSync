@@ -15,7 +15,9 @@ import ThemesScreen from '../screens/settings/ThemesScreen';
 export type MeStackParamList = {
   Profile: undefined;
   Measurements: undefined;
-  GoalSetup: { isProfileSetup?: boolean } | undefined;
+  GoalSetup:
+    | { isProfileSetup?: boolean; prefill?: { startValue: number; targetValue: number; days: number } }
+    | undefined;
   GoalDetails: { goalId: string };
   LogMeasurement: undefined;
   MeasurementHistory: { type: MeasurementType; unit: string };

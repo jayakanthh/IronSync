@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { colors, spacing, radius } from '../../theme/colors';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { SimpleHeader } from '../../components/ui/SimpleHeader';
@@ -10,11 +10,17 @@ import { createGoal } from '../../services/measurements/measurements';
 export default function GoalSetupScreen() {
   const { profile } = useCurrentUser();
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  // Set when you came here from "Edit Goal" — saving replaces the active goal
+  // (createGoal pauses the old one), so the form starts from what you had.
+  const prefill = route.params?.prefill;
 
   // Goal setup fields
-  const [weight, setWeight] = useState(profile?.weightKg?.toString() || '');
-  const [targetWeight, setTargetWeight] = useState('');
-  const [days, setDays] = useState('42'); // default 6 weeks
+  const [weight, setWeight] = useState(
+    (prefill?.startValue ?? profile?.weightKg)?.toString() || '',
+  );
+  const [targetWeight, setTargetWeight] = useState(prefill?.targetValue?.toString() || '');
+  const [days, setDays] = useState(prefill?.days ? String(prefill.days) : '42'); // default 6 weeks
   
   const [showRealityCheck, setShowRealityCheck] = useState(false);
   const [realityRecommendation, setRealityRecommendation] = useState<any>(null);
@@ -91,7 +97,7 @@ export default function GoalSetupScreen() {
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <SimpleHeader title="Create Goal" onBack={() => navigation.goBack()} />
+      <SimpleHeader title={prefill ? 'Change Goal' : 'Create Goal'} onBack={() => navigation.goBack()} />
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.header}>WHAT'S YOUR GOAL?</Text>
         
