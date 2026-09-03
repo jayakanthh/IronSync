@@ -26,7 +26,6 @@ export interface UserProfile {
   goalDays: number;
   goalTargetDate: string;
   goalProgressPercent: number;
-  stepsToday: number;
   caloriesToday: number;
   activityMinutesToday: number;
 }

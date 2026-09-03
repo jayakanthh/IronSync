@@ -1,6 +1,5 @@
 import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useStartWorkoutScroll } from '../../components/common/StartWorkoutButton';
-import Svg, { Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Sparkles,
@@ -8,7 +7,6 @@ import {
   Clock,
   Play,
   ChevronRight,
-  Footprints,
   Calendar,
   Users as UsersIcon,
   User as UserIcon,
@@ -36,6 +34,13 @@ interface HomeScreenProps {
  * Matches the reference layout: greeting, progress stats, today's plan
  * (image + gradient overlay), recent workouts.
  */
+/** 65 → "1h 5m", 45 → "45m". */
+function formatMinutes(total: number): string {
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 export default function HomeScreen({
   user,
   buddies,
@@ -62,35 +67,6 @@ export default function HomeScreen({
       <View style={styles.section}>
         <SectionHeader>YOUR PROGRESS</SectionHeader>
 
-        {/* Steps Card */}
-        <View style={styles.statCardRow}>
-          <View>
-            <Text style={styles.statLabel}>STEPS</Text>
-            <Text style={styles.statValueLg}>{user.stepsToday.toLocaleString()}</Text>
-          </View>
-          <View style={styles.ringWrap}>
-            <Svg width={44} height={44} viewBox="0 0 36 36" style={StyleSheet.absoluteFill}>
-              <Path
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                stroke={colors.border}
-                strokeWidth={2.5}
-                fill="none"
-              />
-              <Path
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                stroke={colors.primary}
-                strokeWidth={2.5}
-                strokeDasharray="45, 100"
-                strokeLinecap="round"
-                fill="none"
-                rotation={-90}
-                origin="18, 18"
-              />
-            </Svg>
-            <Footprints size={16} color={colors.primary} />
-          </View>
-        </View>
-
         {/* Calories & Activity Grid */}
         <View style={styles.gridRow}>
           <View style={[styles.statCard, styles.gridCell]}>
@@ -108,7 +84,9 @@ export default function HomeScreen({
               <Clock size={14} color={colors.textMuted} />
               <Text style={styles.statLabel}>ACTIVITY</Text>
             </View>
-            <Text style={styles.statValueMd}>1h 5m</Text>
+            <Text style={styles.statValueMd}>
+              {user.activityMinutesToday > 0 ? formatMinutes(user.activityMinutesToday) : '—'}
+            </Text>
           </View>
         </View>
       </View>
@@ -310,32 +288,11 @@ const styles = StyleSheet.create({
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   dots: { color: colors.textMuted, fontSize: 12, letterSpacing: 1.5 },
 
-  statCardRow: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   statLabel: { color: colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  statValueLg: { color: colors.text, fontSize: 24, fontWeight: '800', marginTop: 2 },
   statValueMd: { color: colors.text, fontSize: 20, fontWeight: '800' },
   statUnit: { color: colors.textMuted, fontSize: 12 },
   baselineRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 4 },
 
-  ringWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#2b3339',
-    backgroundColor: '#1e2327',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 
   gridRow: { flexDirection: 'row', gap: spacing.sm },
   gridCell: { flex: 1 },

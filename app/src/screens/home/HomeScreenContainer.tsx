@@ -33,6 +33,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
     { title: string; subtitle: string; state: 'workout' | 'rest' | 'none' } | undefined
   >(undefined);
   const [calories, setCalories] = useState(0);
+  const [activityMinutes, setActivityMinutes] = useState(0);
   const [workoutsList, setWorkoutsList] = useState<any[]>([]);
   const [trainingNowList, setTrainingNowList] = useState<TrainingBuddy[]>([]);
   const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
@@ -80,6 +81,15 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
 
       // User's own workout history
       const myWorkouts = await getWorkoutHistory(profile.id, 10);
+
+      // "Activity" is today's logged training, not a guess — it used to be the
+      // literal string "1h 5m".
+      const today = todayISO();
+      setActivityMinutes(
+        myWorkouts
+          .filter((w) => w.date === today)
+          .reduce((sum, w) => sum + (w.durationMinutes || 0), 0),
+      );
       
       // Friends' activity, read straight from their own workouts — they're
       // shared with friends unless they said otherwise (see firestore.rules).
@@ -176,6 +186,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
     avatar: profile.photoURL || '',
     currentWeight: profile.weightKg || 75,
     caloriesToday: calories,
+    activityMinutesToday: activityMinutes,
   };
 
   /**

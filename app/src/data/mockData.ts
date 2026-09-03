@@ -18,9 +18,8 @@ export const initialUserProfile: UserProfile = {
   goalDays: 30,
   goalTargetDate: '28 Aug',
   goalProgressPercent: 72,
-  stepsToday: 3548,
   caloriesToday: 273,
-  activityMinutesToday: 65, // 1h 5m
+  activityMinutesToday: 0, // real value comes from today's logged workouts
 };
 
 export const initialBuddies: TrainingBuddy[] = [
