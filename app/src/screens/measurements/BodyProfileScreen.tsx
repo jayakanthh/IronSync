@@ -22,6 +22,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { doc, updateDoc } from 'firebase/firestore';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { SimpleHeader } from '../../components/ui/SimpleHeader';
 import { db } from '../../config/firebase';
@@ -213,7 +214,7 @@ export default function BodyProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md, paddingBottom: 48 },
+  content: { padding: spacing.md, paddingBottom: TAB_BAR_SPACE },
 
   previewCard: {
     backgroundColor: colors.surface,

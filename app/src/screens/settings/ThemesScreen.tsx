@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, Check, Sun, Moon } from 'lucide-react-native';
 import { useTheme, THEME_REGISTRY, ThemeId, ThemeMode, Theme } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 
 const { width } = Dimensions.get('window');
 
@@ -215,7 +216,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     gap: 16,
-    paddingBottom: 60,
+    paddingBottom: TAB_BAR_SPACE,
   },
   appearanceCard: {
     flexDirection: 'row',

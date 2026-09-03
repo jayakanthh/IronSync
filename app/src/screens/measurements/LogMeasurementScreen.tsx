@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { logMeasurement } from '../../services/measurements/measurements';
 import { SimpleHeader as TopHeader } from '../../components/ui/SimpleHeader';
@@ -141,7 +142,7 @@ export default function LogMeasurementScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md },
+  content: { padding: spacing.md, paddingBottom: TAB_BAR_SPACE },
   section: { marginBottom: spacing.lg },
   sectionTitle: { color: colors.primary, fontSize: 12, fontWeight: '700', letterSpacing: 1.5, marginBottom: spacing.md, textTransform: 'uppercase' },
   inputGroup: { marginBottom: spacing.md },

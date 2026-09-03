@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Card } from '../ui/Card';
 import { Typography } from '../ui/Typography';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { ChevronRight } from 'lucide-react-native';
 import MuscleHeatmapCard from '../overview/MuscleHeatmapCard';
 import RecentExercisesCard from '../overview/RecentExercisesCard';
@@ -448,8 +449,7 @@ export default function OverviewTab({ community, onTabChange }: Props) {
 const styles = StyleSheet.create({
   container: {
     padding: spacing.md,
-    gap: spacing.md,
-  },
+    gap: spacing.md, paddingBottom: TAB_BAR_SPACE },
   card: {
     padding: spacing.md,
   },

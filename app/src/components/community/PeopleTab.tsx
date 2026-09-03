@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Typography } from '../ui/Typography';
 import { Card } from '../ui/Card';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { Search, UserPlus, Play } from 'lucide-react-native';
 
 import type { Community, CommunityMember, Workout, Exercise } from '../../models/index';
@@ -319,7 +320,7 @@ export default function PeopleTab({ community }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: spacing.md, gap: spacing.lg, paddingBottom: 60 },
+  container: { padding: spacing.md, gap: spacing.lg, paddingBottom: TAB_BAR_SPACE },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',

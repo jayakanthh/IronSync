@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Typography } from '../ui/Typography';
 import { Card } from '../ui/Card';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 
 import type { Community } from '../../models/index';
 import { getCommunityStrengthLeaderboard } from '../../services/community/community';
@@ -140,7 +141,7 @@ export default function AchievementsTab({ community }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: spacing.md, gap: spacing.md, paddingBottom: 60 },
+  container: { padding: spacing.md, gap: spacing.md, paddingBottom: TAB_BAR_SPACE },
   headerTitle: { color: colors.textMuted, fontSize: 12, letterSpacing: 1 },
   pills: { flexDirection: 'row', gap: spacing.sm, paddingBottom: spacing.sm },
   pill: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: colors.surfaceAlt },

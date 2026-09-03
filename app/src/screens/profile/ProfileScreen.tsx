@@ -1124,8 +1124,7 @@ export default function ProfileScreen() {
                     </Text>
                   </View>
                   <View style={styles.goalEditRow}>
-                    <Text style={styles.goalEditText}>Tap to view or change this goal</Text>
-                    <ChevronRight size={14} color={colors.primary} />
+                    <ChevronRight size={16} color={colors.primary} />
                   </View>
                 </TouchableOpacity>
               ) : (
@@ -1457,7 +1456,6 @@ const styles = StyleSheet.create({
   goalPremiumCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: 10 },
   goalTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   goalEditRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, marginTop: 6 },
-  goalEditText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
   goalLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   goalTitle: { color: colors.text, fontSize: 15, fontWeight: '800', marginTop: 1 },
   goalBodyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },

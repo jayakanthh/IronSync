@@ -4,6 +4,7 @@ import { Typography } from '../ui/Typography';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 
 import type { Community, CommunityChallenge, ChallengeProgress } from '../../models/index';
 import { 
@@ -283,7 +284,7 @@ export default function ChallengesTab({ community }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: spacing.md, gap: spacing.md, paddingBottom: 60 },
+  container: { padding: spacing.md, gap: spacing.md, paddingBottom: TAB_BAR_SPACE },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 40 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs },
   headerTitle: { color: colors.textMuted, fontSize: 12, letterSpacing: 1 },

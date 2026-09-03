@@ -10,6 +10,7 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { ChevronRight, Activity, Target, Zap, Plus } from 'lucide-react-native';
 import { colors, spacing, radius, useTheme } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { getMeasurementHistory, getActiveGoal, getGoals } from '../../services/measurements/measurements';
 import {
@@ -153,7 +154,7 @@ export default function MeasurementsScreen() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
+      contentContainerStyle={[styles.content, { paddingBottom: TAB_BAR_SPACE }]}
     >
       {/* Header */}
       <View style={styles.pageHeader}>

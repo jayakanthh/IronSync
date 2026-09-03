@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { SimpleHeader } from '../../components/ui/SimpleHeader';
 import { validateGoalFeasibility } from '../../services/measurements/energy';
@@ -120,7 +121,7 @@ export default function GoalSetupScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md },
+  content: { padding: spacing.md, paddingBottom: TAB_BAR_SPACE },
   header: { color: colors.text, fontSize: 18, fontWeight: '800', marginBottom: spacing.lg },
   label: { color: colors.textMuted, fontSize: 14, marginBottom: 8 },
   input: {

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { SimpleHeader } from '../../components/ui/SimpleHeader';
 import ProgressGraph from '../../components/ui/ProgressGraph';
@@ -346,7 +347,7 @@ export default function GoalDetailsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
-  content: { padding: spacing.md, paddingBottom: 48 },
+  content: { padding: spacing.md, paddingBottom: TAB_BAR_SPACE },
 
   goalHeader: { alignItems: 'center', marginBottom: spacing.sm },
   goalType: { color: colors.textMuted, fontSize: 12, fontWeight: '700', letterSpacing: 1.2 },
