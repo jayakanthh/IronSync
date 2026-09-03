@@ -154,7 +154,10 @@ export default function MeasurementsScreen() {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={[styles.content, { paddingBottom: TAB_BAR_SPACE }]}
+      contentContainerStyle={[
+        styles.content,
+        { paddingTop: insets.top + spacing.sm, paddingBottom: TAB_BAR_SPACE },
+      ]}
     >
       {/* Header */}
       <View style={styles.pageHeader}>

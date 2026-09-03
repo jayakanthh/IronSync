@@ -41,7 +41,14 @@ export default function GoalDetailsScreen() {
     if (!profile) return;
     setLoading(true);
     const allGoals = await getGoals(profile.id);
-    const found = allGoals.find((g) => g.id === goalId);
+    // If this goal was replaced (createGoal pauses the old one when you change
+    // your target), show the goal that's actually active now rather than a
+    // paused one the user has moved on from.
+    const requested = allGoals.find((g) => g.id === goalId);
+    const found =
+      requested && requested.status !== 'active'
+        ? allGoals.find((g) => g.status === 'active') ?? requested
+        : requested;
     if (found) {
       setGoal(found);
       const mHistory = await getMeasurementHistory(profile.id, found.measurementType);

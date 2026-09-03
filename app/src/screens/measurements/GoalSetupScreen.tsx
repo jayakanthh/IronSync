@@ -61,8 +61,15 @@ export default function GoalSetupScreen() {
       startDate: Date.now(),
       targetDate: Date.now() + durationDays * 24 * 60 * 60 * 1000,
     });
-    
-    navigation.replace('Measurements');
+
+    // Back to wherever this was opened from — the goal card on Me, the
+    // Measurements screen, the goal's own page. Onboarding is the exception:
+    // there's nothing behind it, so send them on to Measurements.
+    if (route.params?.isProfileSetup || !navigation.canGoBack()) {
+      navigation.replace('Measurements');
+    } else {
+      navigation.goBack();
+    }
   };
 
   if (showRealityCheck && realityRecommendation) {
