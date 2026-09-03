@@ -38,6 +38,15 @@ service cloud.firestore {
       }
     }
 
+    // ---- Public profiles ----
+    // Name, username and avatar — the bits other people legitimately need to
+    // render you in a list. Everything else about a user (email, weight, goals,
+    // health notes) stays behind the owner-only rule above.
+    match /publicProfiles/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
+
     // ---- A friend's workouts ----
     // 1-to-1 friends can see each other's training, which is the whole point of
     // the crew. Two gates, both enforced here rather than in the client:

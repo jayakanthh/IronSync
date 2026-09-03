@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Scale, Bell, Shield, Info, ChevronRight, ChevronLeft, Check, X, Edit2, Palette, Mail, Lock } from "lucide-react-native";
 import { colors, spacing, radius } from "../../theme/colors";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import Avatar from "../../components/common/Avatar";
 import { useCurrentUser } from "../../context/CurrentUser";
 import type { PrivacySettings, ShareLevel } from "../../models/index";
@@ -24,8 +25,9 @@ import {
   changeEmail,
   changePassword,
   sendResetEmail,
-  uploadAvatar,
+  setAvatar,
   removeAvatar,
+  AVATAR_SIZE,
   resolvePrivacy,
   setPrivacy,
   isUsernameAvailable, 
@@ -180,22 +182,33 @@ export default function SettingsScreen() {
 
   const pickPhoto = async () => {
     if (!profile) return;
-    // Cropping to a square up front means we upload roughly what we display,
-    // instead of a 4MB camera original.
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.6,
+      quality: 1, // the resize below does the compressing
     });
     if (result.canceled || !result.assets?.[0]?.uri) return;
 
     setPhotoBusy(true);
     try {
-      await uploadAvatar(profile.id, result.assets[0].uri);
+      // The photo is stored inside a Firestore document, so it has to be small:
+      // 256px at 0.6 quality lands around 10KB, against a 1MiB document limit.
+      const shrunk = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: AVATAR_SIZE, height: AVATAR_SIZE } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      if (!shrunk.base64) throw new Error("Could not read that image.");
+      await setAvatar(
+        profile.id,
+        `data:image/jpeg;base64,${shrunk.base64}`,
+        profile.displayName,
+        profile.username,
+      );
       await refresh();
     } catch (e: any) {
-      Alert.alert("Upload failed", e?.message ?? "Could not upload that photo. Try again.");
+      Alert.alert("Could not save photo", e?.message ?? "Try a different image.");
     } finally {
       setPhotoBusy(false);
     }
@@ -213,7 +226,7 @@ export default function SettingsScreen() {
           if (!profile) return;
           setPhotoBusy(true);
           try {
-            await removeAvatar(profile.id);
+            await removeAvatar(profile.id, profile.displayName, profile.username);
             await refresh();
           } finally {
             setPhotoBusy(false);

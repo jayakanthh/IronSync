@@ -2,57 +2,100 @@
  * Profile photos.
  * Owner: jaikanth (backend).
  *
- * One image per user at `avatars/{uid}` in Cloud Storage, overwritten on change
- * (see backend/storage.rules). The download URL is also kept on the user's
- * profile so their own screens don't need a Storage round trip.
+ * The image is downscaled to 256px and kept as a data URI — a few KB — rather
+ * than uploaded to Cloud Storage, which this project can't use: creating a
+ * bucket needs the Blaze plan.
  *
- * Friends can't read each other's profile documents — those are owner-only —
- * so someone else's photo is fetched straight from Storage by uid instead.
+ * It's written twice, deliberately:
+ *  · on the user's own profile, which is already loaded, so their own avatar
+ *    renders with no extra read;
+ *  · on publicProfiles/{uid}, which any signed-in user may read, because full
+ *    profile documents are owner-only and friends still need a face and a name.
  */
-import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { storage } from '../../config/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import type { PublicProfile } from '../../models/index';
+import { db } from '../../config/firebase';
 import { updateUser } from './users';
 
-const avatarRef = (userId: string) => ref(storage, `avatars/${userId}`);
+/** Big enough for a 52pt avatar on a 3x screen, small enough to inline. */
+export const AVATAR_SIZE = 256;
+
+const publicRef = (userId: string) => doc(db, 'publicProfiles', userId);
+
+/** Fetched public profiles, so a friends list doesn't re-read one per row. */
+const cache = new Map<string, PublicProfile | null>();
 
 /**
- * Upload a picked image and return its URL.
- *
- * `localUri` comes from expo-image-picker; fetch().blob() is how you turn that
- * into something the Storage SDK will take in React Native.
+ * Save a photo (already resized — see pickAvatar in SettingsScreen) and mirror
+ * the readable copy other people use.
  */
-export async function uploadAvatar(userId: string, localUri: string): Promise<string> {
-  const res = await fetch(localUri);
-  const blob = await res.blob();
-  await uploadBytes(avatarRef(userId), blob, { contentType: blob.type || 'image/jpeg' });
-  const url = await getDownloadURL(avatarRef(userId));
-  await updateUser(userId, { photoURL: url });
-  cache.set(userId, url);
-  return url;
+export async function setAvatar(
+  userId: string,
+  dataUri: string,
+  displayName: string,
+  username?: string,
+): Promise<void> {
+  await updateUser(userId, { photoURL: dataUri });
+  const pub: PublicProfile = {
+    userId,
+    displayName,
+    username,
+    photo: dataUri,
+    updatedAt: Date.now(),
+  };
+  await setDoc(publicRef(userId), pub, { merge: true });
+  cache.set(userId, pub);
 }
 
-export async function removeAvatar(userId: string): Promise<void> {
-  try {
-    await deleteObject(avatarRef(userId));
-  } catch {
-    // Already gone — clearing the profile field is what actually matters.
-  }
+export async function removeAvatar(
+  userId: string,
+  displayName: string,
+  username?: string,
+): Promise<void> {
   await updateUser(userId, { photoURL: '' });
-  cache.set(userId, null);
+  const pub: PublicProfile = { userId, displayName, username, photo: '', updatedAt: Date.now() };
+  await setDoc(publicRef(userId), pub, { merge: true });
+  cache.set(userId, pub);
 }
 
-/** Resolved URLs, so a list of friends doesn't hit Storage once per row per render. */
-const cache = new Map<string, string | null>();
+/**
+ * Keep the public copy in step with the name/username on the private profile.
+ * Cheap to call — it only writes when something actually differs.
+ */
+export async function syncPublicProfile(
+  userId: string,
+  displayName: string,
+  username?: string,
+  photo?: string,
+): Promise<void> {
+  const existing = await getPublicProfile(userId);
+  if (
+    existing &&
+    existing.displayName === displayName &&
+    existing.username === username &&
+    (existing.photo ?? '') === (photo ?? '')
+  ) {
+    return;
+  }
+  const pub: PublicProfile = { userId, displayName, username, photo: photo ?? '', updatedAt: Date.now() };
+  await setDoc(publicRef(userId), pub, { merge: true });
+  cache.set(userId, pub);
+}
 
-/** Someone else's avatar URL, or null if they haven't set one. */
-export async function getAvatarUrl(userId: string): Promise<string | null> {
+export async function getPublicProfile(userId: string): Promise<PublicProfile | null> {
   if (cache.has(userId)) return cache.get(userId) ?? null;
   try {
-    const url = await getDownloadURL(avatarRef(userId));
-    cache.set(userId, url);
-    return url;
+    const snap = await getDoc(publicRef(userId));
+    const value = snap.exists() ? (snap.data() as PublicProfile) : null;
+    cache.set(userId, value); // remember misses too, or we re-read forever
+    return value;
   } catch {
-    cache.set(userId, null); // no photo — remember that too, or we retry forever
     return null;
   }
+}
+
+/** Someone else's photo, or null if they haven't set one. */
+export async function getAvatarUrl(userId: string): Promise<string | null> {
+  const pub = await getPublicProfile(userId);
+  return pub?.photo || null;
 }

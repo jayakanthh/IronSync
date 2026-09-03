@@ -31,7 +31,7 @@ export interface User {
    *  DEFAULT_PRIVACY — see services/users/privacy.ts. */
   privacy?: PrivacySettings;
 
-  /** Download URL of the profile photo at avatars/{uid}. Absent = initials. */
+  /** Profile photo as a data URI (see services/users/avatar.ts). Absent = initials. */
   photoURL?: string;
 
   username?: string;
@@ -39,6 +39,19 @@ export interface User {
   
   // body progress & energy profile
   activityLevel?: 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active';
+}
+
+/**
+ * The slice of a user that other people can read. Full profiles are owner-only,
+ * so this is what makes someone's name and face show up in a friends list.
+ */
+export interface PublicProfile {
+  userId: string;
+  displayName: string;
+  username?: string;
+  /** Small JPEG as a data URI — a few KB, well inside Firestore's 1MiB limit. */
+  photo?: string;
+  updatedAt: number;
 }
 
 /** Who can see one kind of data. */
