@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, KeyboardAvoidingView, Modal, Platform } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { colors, spacing, radius } from '../../theme/colors';
 import { TAB_BAR_SPACE } from '../../theme/layout';
@@ -72,40 +72,53 @@ export default function GoalSetupScreen() {
     }
   };
 
-  if (showRealityCheck && realityRecommendation) {
-    return (
-      <View style={styles.screen}>
-        <SimpleHeader title="Reality Check" onBack={() => setShowRealityCheck(false)} />
-        <View style={styles.content}>
-          <Text style={styles.warningTitle}>⚠️ THIS GOAL IS {realityRecommendation.feasibility === 'highly_aggressive' ? 'TOO' : 'VERY'} AGGRESSIVE</Text>
-          <Text style={styles.warningText}>
-            You want to reach {realityRecommendation.target} kg in {days} days.
-            That is {realityRecommendation.feasibility === 'highly_aggressive' ? 'substantially faster than' : 'faster than'} a sustainable rate of weight change.
-          </Text>
-          <Text style={styles.warningText}>
-            We recommend a longer timeframe.
-          </Text>
-          <View style={styles.recommendationCard}>
-            <Text style={styles.cardText}>Recommended target: {realityRecommendation.target} kg</Text>
-            <Text style={styles.cardText}>Recommended timeframe: ~{Math.ceil(realityRecommendation.recommendedDays / 7)} weeks</Text>
-          </View>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => saveGoal(realityRecommendation.target, realityRecommendation.recommendedDays)}>
-            <Text style={styles.primaryButtonText}>Use Recommended Goal</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => saveGoal(realityRecommendation.target, parseInt(days))}>
-            <Text style={styles.secondaryButtonText}>Keep My Target</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
   return (
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <SimpleHeader title={prefill ? 'Change Goal' : 'Create Goal'} onBack={() => navigation.goBack()} />
+
+      <Modal
+        visible={showRealityCheck && !!realityRecommendation}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRealityCheck(false)}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.checkCard}>
+            <Text style={styles.warningTitle}>
+              ⚠️ THIS GOAL IS {realityRecommendation?.feasibility === 'highly_aggressive' ? 'TOO' : 'VERY'} AGGRESSIVE
+            </Text>
+            <Text style={styles.warningText}>
+              You want to reach {realityRecommendation?.target} kg in {days} days. That is{' '}
+              {realityRecommendation?.feasibility === 'highly_aggressive' ? 'substantially faster than' : 'faster than'}{' '}
+              a sustainable rate of weight change.
+            </Text>
+            <View style={styles.recommendationCard}>
+              <Text style={styles.cardText}>Recommended target: {realityRecommendation?.target} kg</Text>
+              <Text style={styles.cardText}>
+                Recommended timeframe: ~{Math.ceil((realityRecommendation?.recommendedDays ?? 0) / 7)} weeks
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => saveGoal(realityRecommendation.target, realityRecommendation.recommendedDays)}
+            >
+              <Text style={styles.primaryButtonText}>Use Recommended Goal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => saveGoal(realityRecommendation.target, parseInt(days))}
+            >
+              <Text style={styles.secondaryButtonText}>Keep My Target</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowRealityCheck(false)}>
+              <Text style={styles.cancelText}>Back to editing</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.header}>WHAT'S YOUR GOAL?</Text>
         
@@ -127,6 +140,17 @@ export default function GoalSetupScreen() {
 }
 
 const styles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: spacing.md },
+  checkCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  cancelBtn: { alignItems: 'center', paddingVertical: 10 },
+  cancelText: { color: colors.textMuted, fontSize: 14, fontWeight: '600' },
   screen: { flex: 1, backgroundColor: colors.bg },
   content: { padding: spacing.md, paddingBottom: TAB_BAR_SPACE },
   header: { color: colors.text, fontSize: 18, fontWeight: '800', marginBottom: spacing.lg },
