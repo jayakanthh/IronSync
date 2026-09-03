@@ -204,6 +204,8 @@ export async function seedFoodDatabase(): Promise<void> {
   if (!checkSnap.empty) return; // already seeded
 
   const batch = writeBatch(db);
+  // Tokens are added below, so anything seeded here is searchable by any word
+  // in its name, not just the first one.
   const seedItems: Omit<FoodProduct, 'id'>[] = [
     {
       name: 'Heritage Toned Milk',
@@ -353,13 +355,12 @@ export async function seedFoodDatabase(): Promise<void> {
 
   for (const item of seedItems) {
     const ref = doc(collection(db, 'foods'));
-    batch.set(ref, { ...item, id: ref.id });
+    batch.set(ref, { ...item, id: ref.id, searchTokens: buildSearchTokens(item.name, item.brand) });
   }
 
   await batch.commit();
 }
 
-/** Search global food database + user custom foods. */
 /**
  * Find foods by name or brand, across the shared library and the user's own.
  *
@@ -385,17 +386,22 @@ export async function searchFoods(
   const customCol = collection(db, 'users', userId, 'customFoods');
 
   const runs: Promise<FoodProduct[]>[] = [];
-  const collect = (q: ReturnType<typeof query>) =>
+  const collect = (q: ReturnType<typeof query>, label: string) =>
     getDocs(q)
       .then((snap) => snap.docs.map((d) => d.data() as FoodProduct))
-      .catch(() => [] as FoodProduct[]); // one failed pass shouldn't empty the results
+      .catch((err) => {
+        // One failed pass shouldn't empty the results — but it must be visible,
+        // or a broken query looks identical to "no matches".
+        console.warn(`[searchFoods] ${label} query failed:`, err?.message ?? err);
+        return [] as FoodProduct[];
+      });
 
   if (token) {
-    runs.push(collect(query(foodsCol, where('searchTokens', 'array-contains', token), limit(max))));
-    runs.push(collect(query(customCol, where('searchTokens', 'array-contains', token), limit(max))));
+    runs.push(collect(query(foodsCol, where('searchTokens', 'array-contains', token), limit(max)), 'foods/tokens'));
+    runs.push(collect(query(customCol, where('searchTokens', 'array-contains', token), limit(max)), 'customFoods/tokens'));
   }
-  runs.push(collect(query(foodsCol, where('normalizedName', '>=', clean), where('normalizedName', '<=', end), limit(max))));
-  runs.push(collect(query(customCol, where('normalizedName', '>=', clean), where('normalizedName', '<=', end), limit(max))));
+  runs.push(collect(query(foodsCol, where('normalizedName', '>=', clean), where('normalizedName', '<=', end), limit(max)), 'foods/prefix'));
+  runs.push(collect(query(customCol, where('normalizedName', '>=', clean), where('normalizedName', '<=', end), limit(max)), 'customFoods/prefix'));
 
   const byId = new Map<string, FoodProduct>();
   for (const list of await Promise.all(runs)) {
