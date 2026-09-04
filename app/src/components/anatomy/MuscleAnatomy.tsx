@@ -20,6 +20,11 @@ import {
 } from './heat-scale';
 import { useTheme } from '../../theme/colors';
 
+/** How solid the untrained body reads. Enough to see the anatomy, not so much
+ *  that it competes with the heat painted over it. */
+const BODY_FILL = 0.34;
+const BODY_STROKE = 0.5;
+
 /** Every muscle we can paint. Order is irrelevant; it's a lookup list. */
 const ALL_MUSCLES = Object.keys(MUSCLE_LABELS) as MuscleId[];
 
@@ -125,10 +130,15 @@ export function MuscleAnatomy({
             <Path
               key={`body-${i}`}
               d={d}
-              fill={neutralColor ?? theme.colors.surfaceElevated}
-              fillOpacity={clamp01(neutralStrength)}
-              stroke={theme.colors.border}
-              strokeWidth={1.2}
+              // surfaceElevated sat a few shades from the card it's drawn on, so
+              // the figure was invisible. textSecondary is the one colour every
+              // theme guarantees reads against its own background — light on the
+              // dark themes, dark on the light ones.
+              fill={neutralColor ?? theme.colors.textSecondary}
+              fillOpacity={clamp01(neutralStrength) * BODY_FILL}
+              stroke={theme.colors.textSecondary}
+              strokeOpacity={BODY_STROKE}
+              strokeWidth={1.6}
             />
           ))}
 
