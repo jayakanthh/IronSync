@@ -585,6 +585,15 @@ export default function SettingsScreen() {
             </View>
             <Text style={styles.infoValue}>Open Food Facts (ODbL)</Text>
           </View>
+
+          {/* MIT requires the notice to travel with the artwork. */}
+          <View style={styles.infoRow}>
+            <View style={styles.toggleLeft}>
+              <Info size={16} color={colors.textMuted} />
+              <Text style={styles.toggleLabel}>Muscle map</Text>
+            </View>
+            <Text style={styles.infoValue}>MuscleMap (MIT)</Text>
+          </View>
         </View>
 
         {/* Logout */}

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet, StyleProp, ViewStyle } from 'react-native';
+import { useCurrentUser } from '../../context/CurrentUser';
 import {
   MuscleAnatomy,
   MuscleAnatomyPair,
@@ -7,6 +8,7 @@ import {
   type MuscleIntensityMap,
   type MuscleEngagementMap,
   type HeatPalette,
+  type BodyGender,
 } from '../anatomy';
 import { mapRawToLovableMuscleId, normalizeSetCountsToIntensity } from '../../utils/muscleHeatmap';
 
@@ -52,6 +54,8 @@ export interface MuscleSilhouetteProps {
   engagement?: MuscleEngagementMap;
   palette?: HeatPalette;
   view?: 'front' | 'back' | 'both';
+  /** Which body to draw. Omitted means it follows the signed-in user's profile. */
+  gender?: BodyGender;
   size?: number;
   gap?: number;
   style?: StyleProp<ViewStyle>;
@@ -70,10 +74,15 @@ export default function MuscleSilhouette({
   engagement: customEngagement,
   palette,
   view = 'front',
+  gender,
   size = 120,
   gap = 16,
   style,
 }: MuscleSilhouetteProps) {
+  const { profile } = useCurrentUser();
+  // An explicit prop wins; otherwise draw whichever body the user picked.
+  const figure: BodyGender = gender ?? (profile?.gender === 'female' ? 'female' : 'male');
+
   // Derive intensity map from explicit intensity or from setCounts / primaryMuscles
   const intensityMap: MuscleIntensityMap = useMemo(() => {
     if (customIntensity) return customIntensity;
@@ -113,6 +122,7 @@ export default function MuscleSilhouette({
   if (view === 'both') {
     return (
       <MuscleAnatomyPair
+        gender={figure}
         intensity={intensityMap}
         engagement={engagementMap}
         palette={palette}
@@ -126,6 +136,7 @@ export default function MuscleSilhouette({
   return (
     <MuscleAnatomy
       view={view}
+      gender={figure}
       intensity={intensityMap}
       engagement={engagementMap}
       palette={palette}

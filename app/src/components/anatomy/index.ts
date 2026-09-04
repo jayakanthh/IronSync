@@ -4,14 +4,8 @@ export type {
   MuscleIntensityMap,
   MuscleEngagementMap,
 } from './MuscleAnatomy';
-export {
-  MUSCLE_IDS,
-  MUSCLE_LABELS,
-  REGIONS_BY_VIEW,
-  ARTWORK_WIDTH,
-  ARTWORK_HEIGHT,
-} from './muscle-regions';
-export type { MuscleId, AnatomyView } from './muscle-regions';
+export { MUSCLE_LABELS, pathsForMuscle, bodyOutlinePaths, getViewBox } from './muscle-regions';
+export type { MuscleId, AnatomyView, BodyGender } from './muscle-regions';
 export {
   DEFAULT_HEAT_PALETTE,
   THEME_HEAT_PALETTES,

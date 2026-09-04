@@ -63,6 +63,8 @@ export interface OnboardingData {
   heightCm?: number;
   weightKg?: number;
   goal?: User['goal'];
+  /** Which body the muscle map draws on. */
+  gender?: User['gender'];
   trainingDays: Weekday[];
 }
 
@@ -86,6 +88,7 @@ export async function completeOnboarding(
     heightCm: data.heightCm,
     weightKg: data.weightKg,
     goal: data.goal,
+    gender: data.gender,
     trainingDays: data.trainingDays,
     currentStreak: 0,
     longestStreak: 0,
