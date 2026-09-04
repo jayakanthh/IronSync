@@ -97,6 +97,28 @@ export interface Measurement {
   };
 }
 
+/** Which way you were facing. Comparisons only make sense angle-to-angle. */
+export type PhotoAngle = 'front' | 'side' | 'back';
+
+/**
+ * A physique photo, for seeing change that the scale doesn't show.
+ *
+ * ⚠️ Sensitive: these are pictures of the user's body. Owner-only in
+ * firestore.rules, never published to publicProfiles, and never shared with a
+ * crew — there is deliberately no privacy setting that can expose them.
+ */
+export interface ProgressPhoto {
+  id: string;
+  date: string; // YYYY-MM-DD
+  angle: PhotoAngle;
+  /** Downscaled JPEG as a data URI — Cloud Storage needs Blaze on this project. */
+  image: string;
+  /** Bodyweight on the day, so a comparison can show the numbers too. */
+  weightKg?: number;
+  note?: string;
+  createdAt: number;
+}
+
 /**
  * A private health note (injury, condition, limitation).
  * ⚠️ Sensitive — must stay readable ONLY by the owning user (see backend/firestore.rules).

@@ -7,6 +7,7 @@ export * from './auth/auth';
 export * from './users/users';
 export * from './users/profile';
 export * from './users/privacy';
+export * from './users/progressPhotos';
 export * from './workouts/workouts';
 export * from './exercises/exercises';
 export * from './workouts/plans';

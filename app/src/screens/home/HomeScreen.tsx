@@ -57,7 +57,12 @@ export default function HomeScreen({
   const scrollProps = useStartWorkoutScroll();
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} {...scrollProps}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+      {...scrollProps}
+    >
       {/* Welcome Greeting */}
       <View>
         <Text style={styles.h1}>Welcome back, {user.name}</Text>

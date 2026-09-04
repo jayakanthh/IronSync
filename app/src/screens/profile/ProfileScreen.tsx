@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Modal, ScrollView,
+  ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View, KeyboardAvoidingView, Platform, Dimensions
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,7 +28,16 @@ import {
 } from '../../utils/formatting/units';
 import { logMeasurement, getGoals } from '../../services/measurements/measurements';
 import { todayISO } from '../../utils/formatting/dates';
-import type { MeasurementEntry, MeasurementGoal, MeasurementType, Workout, Exercise, PersonalRecord } from '../../models/index';
+import type { MeasurementEntry, MeasurementGoal, MeasurementType, Workout, Exercise, PersonalRecord, PhotoAngle, ProgressPhoto } from '../../models/index';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import {
+  PHOTO_WIDTH,
+  addProgressPhoto,
+  bookendsFor,
+  deleteProgressPhoto,
+  getProgressPhotos,
+} from '../../services/index';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
 import type { MuscleId } from '../../components/anatomy';
 import { mapRawToLovableMuscleId } from '../../utils/muscleHeatmap';
@@ -363,6 +372,14 @@ export default function ProfileScreen() {
   const system = getUnitSystem(profile);
   const [activeTab, setActiveTab] = useState<MeTab>('overview');
 
+  // ── Progress photos ────────────────────────────────────────────────────────
+  const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoAngle, setPhotoAngle] = useState<PhotoAngle>('front');
+  const [viewingPhoto, setViewingPhoto] = useState<ProgressPhoto | null>(null);
+  const [comparing, setComparing] = useState<ProgressPhoto[] | null>(null);
+
   // Overview sub-tab state
   const [overviewSubTab, setOverviewSubTab] = useState<OverviewSubTab>('recent');
   const [expandedMuscle, setExpandedMuscle] = useState<string | null>(null);
@@ -424,6 +441,91 @@ export default function ProfileScreen() {
     }
     finally { setLoadingOverview(false); }
   }, []);
+
+  const loadPhotos = useCallback(async () => {
+    if (!profile) return;
+    setLoadingPhotos(true);
+    try {
+      setPhotos(await getProgressPhotos(profile.id));
+    } catch (e) {
+      console.error('Could not load progress photos:', e);
+    } finally {
+      setLoadingPhotos(false);
+    }
+  }, [profile]);
+
+  /**
+   * Resize before storing: the image lives inside a Firestore document, so a
+   * camera original would blow the 1MiB limit on its own.
+   */
+  const addPhoto = async (source: 'camera' | 'library') => {
+    if (!profile) return;
+    const picked =
+      source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ quality: 1 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+    if (picked.canceled || !picked.assets?.[0]?.uri) return;
+
+    setPhotoBusy(true);
+    try {
+      const shrunk = await ImageManipulator.manipulateAsync(
+        picked.assets[0].uri,
+        [{ resize: { width: PHOTO_WIDTH } }],
+        { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      if (!shrunk.base64) throw new Error('Could not read that image.');
+      await addProgressPhoto(profile.id, {
+        date: todayISO(),
+        angle: photoAngle,
+        image: `data:image/jpeg;base64,${shrunk.base64}`,
+        weightKg: profile.weightKg,
+      });
+      await loadPhotos();
+    } catch (e: any) {
+      Alert.alert('Could not save photo', e?.message ?? 'Try another image.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const handleAddPhoto = () => {
+    Alert.alert(`New ${photoAngle} photo`, 'Where from?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Take one', onPress: () => addPhoto('camera') },
+      { text: 'Choose from library', onPress: () => addPhoto('library') },
+    ]);
+  };
+
+  const handleDeletePhoto = (photo: ProgressPhoto) => {
+    Alert.alert('Delete photo', `Remove your ${photo.angle} photo from ${photo.date}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          if (!profile) return;
+          setViewingPhoto(null);
+          await deleteProgressPhoto(profile.id, photo.id);
+          await loadPhotos();
+        },
+      },
+    ]);
+  };
+
+  /** Only the angle currently selected — mixing them makes comparison useless. */
+  const photosOfAngle = useMemo(
+    () => photos.filter((p) => p.angle === photoAngle),
+    [photos, photoAngle],
+  );
+
+  const handleCompare = () => {
+    const pair = bookendsFor(photos, photoAngle);
+    if (pair.length < 2) {
+      Alert.alert('Not enough yet', `Take at least two ${photoAngle} photos and you can put them side by side.`);
+      return;
+    }
+    setComparing(pair);
+  };
 
   const loadMeasuresData = useCallback(async () => {
     const uid = currentUserId();
@@ -491,6 +593,12 @@ export default function ProfileScreen() {
     loadMeasuresData();
     loadPrData();
   }, [loadOverviewData, loadMeasuresData, loadPrData]));
+
+  // Each photo document carries its own image, so this waits until the tab is
+  // opened rather than loading a gallery nobody asked for.
+  useEffect(() => {
+    if (activeTab === 'photos') loadPhotos();
+  }, [activeTab, loadPhotos]);
 
   useEffect(() => {
     if (!exerciseSearch.trim()) { setExerciseResults([]); return; }
@@ -1149,18 +1257,77 @@ export default function ProfileScreen() {
         {/* TAB 4: PHOTOS */}
         {/* ================================================================ */}
         {activeTab === 'photos' && (
-          <View style={styles.photosEmptyContainer}>
-            <View style={styles.photosIconCircle}>
-              <Camera size={28} color={colors.textMuted} />
+          <>
+            {/* Angle first: a comparison only means something like-for-like. */}
+            <View style={styles.angleRow}>
+              {(['front', 'side', 'back'] as PhotoAngle[]).map((a) => (
+                <TouchableOpacity
+                  key={a}
+                  style={[styles.anglePill, photoAngle === a && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }]}
+                  onPress={() => setPhotoAngle(a)}
+                >
+                  <Text style={[styles.anglePillText, photoAngle === a && { color: theme.colors.primaryForeground }]}>
+                    {a.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
-            <Text style={styles.photosTitle}>Visual Progress Gallery</Text>
-            <Text style={styles.photosDesc}>
-              Upload and compare front, side, and back physique photos to track visual muscle growth and transformation.
+
+            <View style={styles.photoActions}>
+              <TouchableOpacity style={styles.photoAddBtn} onPress={handleAddPhoto} disabled={photoBusy}>
+                {photoBusy ? (
+                  <ActivityIndicator size="small" color={colors.primaryDark} />
+                ) : (
+                  <>
+                    <Camera size={16} color={colors.primaryDark} />
+                    <Text style={styles.photoAddText}>Add {photoAngle} photo</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoCompareBtn} onPress={handleCompare}>
+                <Text style={styles.photoCompareText}>Compare</Text>
+              </TouchableOpacity>
+            </View>
+
+            {loadingPhotos ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
+            ) : photosOfAngle.length === 0 ? (
+              <View style={styles.photosEmptyContainer}>
+                <View style={styles.photosIconCircle}>
+                  <Camera size={28} color={colors.textMuted} />
+                </View>
+                <Text style={styles.photosTitle}>No {photoAngle} photos yet</Text>
+                <Text style={styles.photosDesc}>
+                  Take one now and another in a few weeks. Side by side is where you'll see what
+                  the scale misses.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.photoGrid}>
+                {photosOfAngle.map((p) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={styles.photoCell}
+                    onPress={() => setViewingPhoto(p)}
+                    onLongPress={() => handleDeletePhoto(p)}
+                  >
+                    <Image source={{ uri: p.image }} style={styles.photoThumb} />
+                    <Text style={styles.photoDate}>{p.date}</Text>
+                    {p.weightKg ? (
+                      <Text style={styles.photoWeight}>
+                        {convertWeightToDisplay(p.weightKg, system).toFixed(1)} {getWeightUnit(system)}
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            <Text style={styles.photoPrivacyNote}>
+              Progress photos stay on your account only. They're never shared with friends or a
+              crew, and nothing publishes them.
             </Text>
-            <TouchableOpacity style={styles.photosCta} onPress={() => Alert.alert('Coming Soon', 'Photo upload gallery is in development.')}>
-              <Text style={styles.photosCtaText}>Add Transformation Photo</Text>
-            </TouchableOpacity>
-          </View>
+          </>
         )}
       </ScrollView>
 
@@ -1200,6 +1367,73 @@ export default function ProfileScreen() {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+      
+      {/* One photo, full width */}
+      <Modal visible={!!viewingPhoto} transparent animationType="fade" onRequestClose={() => setViewingPhoto(null)}>
+        <View style={styles.photoViewerOverlay}>
+          {viewingPhoto && (
+            <>
+              <Image source={{ uri: viewingPhoto.image }} style={styles.photoViewerImage} resizeMode="contain" />
+              <View style={styles.photoViewerBar}>
+                <View>
+                  <Text style={styles.photoViewerMeta}>{viewingPhoto.date}</Text>
+                  <Text style={styles.compareSub}>
+                    {viewingPhoto.angle}
+                    {viewingPhoto.weightKg
+                      ? ` · ${convertWeightToDisplay(viewingPhoto.weightKg, system).toFixed(1)} ${getWeightUnit(system)}`
+                      : ''}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: spacing.md }}>
+                  <TouchableOpacity onPress={() => handleDeletePhoto(viewingPhoto)}>
+                    <Text style={{ color: colors.danger, fontWeight: '700' }}>Delete</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setViewingPhoto(null)}>
+                    <Text style={{ color: '#fff', fontWeight: '700' }}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
+          )}
+        </View>
+      </Modal>
+
+      {/* Then and now, side by side — the point of taking them at all. */}
+      <Modal visible={!!comparing} transparent animationType="fade" onRequestClose={() => setComparing(null)}>
+        <View style={styles.photoViewerOverlay}>
+          {comparing && comparing.length === 2 && (
+            <>
+              <View style={styles.compareRow}>
+                {comparing.map((p, i) => (
+                  <View key={p.id} style={styles.compareCell}>
+                    <Image source={{ uri: p.image }} style={styles.compareImage} resizeMode="cover" />
+                    <Text style={styles.compareCaption}>{i === 0 ? 'THEN' : 'NOW'}</Text>
+                    <Text style={styles.compareSub}>{p.date}</Text>
+                    {p.weightKg ? (
+                      <Text style={styles.compareSub}>
+                        {convertWeightToDisplay(p.weightKg, system).toFixed(1)} {getWeightUnit(system)}
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+              {comparing[0].weightKg && comparing[1].weightKg ? (
+                <Text style={[styles.compareCaption, { marginTop: spacing.md }]}>
+                  {(() => {
+                    const diff = comparing[1].weightKg! - comparing[0].weightKg!;
+                    const shown = Math.abs(convertWeightToDisplay(diff, system)).toFixed(1);
+                    if (Math.abs(diff) < 0.05) return 'Same weight';
+                    return `${diff > 0 ? '+' : '−'}${shown} ${getWeightUnit(system)} between these`;
+                  })()}
+                </Text>
+              ) : null}
+              <TouchableOpacity style={styles.photoViewerBar} onPress={() => setComparing(null)}>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>Close</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </Modal>
     </View>
   );
@@ -1430,6 +1664,69 @@ const styles = StyleSheet.create({
   meaTileUnit: { color: colors.primary, fontSize: 12, fontWeight: '700' },
 
   // Photos Tab premium empty state
+  angleRow: { flexDirection: 'row', gap: spacing.sm },
+  anglePill: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+  },
+  anglePillText: { color: colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+
+  photoActions: { flexDirection: 'row', gap: spacing.sm },
+  photoAddBtn: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+  },
+  photoAddText: { color: colors.primaryDark, fontSize: 14, fontWeight: '800' },
+  photoCompareBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+  },
+  photoCompareText: { color: colors.text, fontSize: 14, fontWeight: '700' },
+
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  photoCell: { width: '48%', gap: 4 },
+  photoThumb: {
+    width: '100%',
+    aspectRatio: 3 / 4,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+  },
+  photoDate: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  photoWeight: { color: colors.textMuted, fontSize: 11 },
+  photoPrivacyNote: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 16,
+    fontStyle: 'italic',
+    marginTop: spacing.sm,
+  },
+
+  photoViewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)', justifyContent: 'center', padding: spacing.md },
+  photoViewerImage: { width: '100%', aspectRatio: 3 / 4, borderRadius: radius.lg },
+  photoViewerBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.md },
+  photoViewerMeta: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  compareRow: { flexDirection: 'row', gap: spacing.sm },
+  compareCell: { flex: 1, gap: 6 },
+  compareImage: { width: '100%', aspectRatio: 3 / 4, borderRadius: radius.md },
+  compareCaption: { color: '#fff', fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  compareSub: { color: '#b9bfc6', fontSize: 11, textAlign: 'center' },
+
   photosEmptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md, minHeight: 380 },
   photosIconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   photosTitle: { color: colors.text, fontSize: 16, fontWeight: '800' },
