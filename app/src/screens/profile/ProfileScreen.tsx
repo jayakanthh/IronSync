@@ -39,6 +39,7 @@ import {
   exifDate,
   getProgressPhotos,
   groupByDate,
+  weightNearDate,
 } from '../../services/index';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
 import type { MuscleId } from '../../components/anatomy';
@@ -392,6 +393,9 @@ export default function ProfileScreen() {
   const [photoBusy, setPhotoBusy] = useState(false);
   const [viewingPhoto, setViewingPhoto] = useState<ProgressPhoto | null>(null);
   const [comparing, setComparing] = useState<ProgressPhoto[] | null>(null);
+  // A backdated photo with no weigh-in near it waits here while we ask.
+  const [pendingPhoto, setPendingPhoto] = useState<Omit<ProgressPhoto, 'id' | 'createdAt'> | null>(null);
+  const [pendingWeight, setPendingWeight] = useState('');
 
   // Overview sub-tab state
   const [overviewSubTab, setOverviewSubTab] = useState<OverviewSubTab>('recent');
@@ -503,16 +507,43 @@ export default function ProfileScreen() {
         { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
       if (!shrunk.base64) throw new Error('Could not read that image.');
-      await addProgressPhoto(profile.id, {
+      const draft = {
         date: taken,
         angle,
         image: `data:image/jpeg;base64,${shrunk.base64}`,
-        // Only meaningful for today — an old photo's weight isn't today's.
-        weightKg: taken === todayISO() ? profile.weightKg : undefined,
-      });
-      await loadPhotos();
+      };
+
+      // Today's photo takes today's weight. An older one takes the weigh-in
+      // nearest that date if we logged one — and only if neither exists do we
+      // bother the user about it.
+      const logged = weightNearDate(historyByType.weight ?? [], taken);
+      const known = taken === todayISO() ? logged ?? profile.weightKg : logged;
+
+      if (known != null) {
+        await addProgressPhoto(profile.id, { ...draft, weightKg: known });
+        await loadPhotos();
+      } else {
+        setPendingWeight('');
+        setPendingPhoto(draft);
+      }
     } catch (e: any) {
       Alert.alert('Could not save photo', e?.message ?? 'Try another image.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  /** Finish saving a backdated photo, with or without the weight. */
+  const resolvePendingPhoto = async (weight?: number) => {
+    if (!profile || !pendingPhoto) return;
+    const draft = pendingPhoto;
+    setPendingPhoto(null);
+    setPhotoBusy(true);
+    try {
+      await addProgressPhoto(profile.id, { ...draft, weightKg: weight });
+      await loadPhotos();
+    } catch (e: any) {
+      Alert.alert('Could not save photo', e?.message ?? 'Try again.');
     } finally {
       setPhotoBusy(false);
     }
@@ -1419,6 +1450,53 @@ export default function ProfileScreen() {
         </KeyboardAvoidingView>
       </Modal>
       
+      {/* Only shown when a backdated photo has no weigh-in near its date.
+          Alert.prompt is iOS-only, so this is a real sheet. */}
+      <Modal
+        visible={!!pendingPhoto}
+        transparent
+        animationType="slide"
+        onRequestClose={() => resolvePendingPhoto(undefined)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalBackdrop}
+        >
+          <View style={[styles.modalSheet, { padding: spacing.md, gap: spacing.sm }]}>
+            <Text style={styles.modalTitle}>Roughly what did you weigh?</Text>
+            <Text style={styles.photosDesc}>
+              This photo is from {pendingPhoto ? formatPhotoDate(pendingPhoto.date) : ''} and there's
+              no weigh-in near that date. An approximate number is enough — it only labels the photo.
+            </Text>
+            <TextInput
+              style={styles.logFieldInput}
+              keyboardType="decimal-pad"
+              placeholder={`Weight in ${getWeightUnit(system)}`}
+              placeholderTextColor={colors.textMuted}
+              value={pendingWeight}
+              onChangeText={setPendingWeight}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={styles.photoAddBtn}
+              onPress={() => {
+                const typed = parseFloat(pendingWeight);
+                if (!typed || typed <= 0) {
+                  Alert.alert('Check the number', 'Enter a weight, or skip it.');
+                  return;
+                }
+                resolvePendingPhoto(convertWeightToCanonical(typed, system));
+              }}
+            >
+              <Text style={styles.photoAddText}>Save with weight</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.photoSkipBtn} onPress={() => resolvePendingPhoto(undefined)}>
+              <Text style={styles.photoSkipText}>Skip — save without a weight</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* One photo, full width */}
       <Modal visible={!!viewingPhoto} transparent animationType="fade" onRequestClose={() => setViewingPhoto(null)}>
         <View style={styles.photoViewerOverlay}>
@@ -1767,6 +1845,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: colors.surfaceAlt,
   },
+  photoSkipBtn: { alignItems: 'center', paddingVertical: 12 },
+  photoSkipText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
   photoPrivacyNote: {
     color: colors.textMuted,
     fontSize: 11,

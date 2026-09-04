@@ -101,3 +101,30 @@ export function exifDate(exif: Record<string, any> | null | undefined): string |
   if (year < 2000 || year > new Date().getFullYear()) return null;
   return iso;
 }
+
+/** How far from a photo's date a weigh-in can be and still describe it. */
+const WEIGHT_WINDOW_DAYS = 14;
+
+/**
+ * The logged bodyweight that best describes a photo's date.
+ *
+ * A photo from August should carry August's weight, not today's — so this looks
+ * for the nearest weigh-in either side of that day and gives up rather than
+ * guessing if the closest one is a fortnight away.
+ */
+export function weightNearDate(
+  history: { value: number; recordedAt: number }[],
+  isoDate: string,
+): number | null {
+  if (!history.length) return null;
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const target = new Date(y, m - 1, d, 12).getTime();
+
+  let best: { value: number; gap: number } | null = null;
+  for (const entry of history) {
+    const gap = Math.abs(entry.recordedAt - target);
+    if (!best || gap < best.gap) best = { value: entry.value, gap };
+  }
+  if (!best) return null;
+  return best.gap <= WEIGHT_WINDOW_DAYS * 24 * 60 * 60 * 1000 ? best.value : null;
+}
