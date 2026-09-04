@@ -31,7 +31,6 @@ import { todayISO } from '../../utils/formatting/dates';
 import type { MeasurementEntry, MeasurementGoal, MeasurementType, Workout, Exercise, PersonalRecord } from '../../models/index';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
 import type { MuscleId } from '../../components/anatomy';
-import { THEME_HEAT_PALETTES, DEFAULT_HEAT_PALETTE } from '../../components/anatomy';
 import { mapRawToLovableMuscleId } from '../../utils/muscleHeatmap';
 import ExpandableMeasurementCard from '../../components/measurements/ExpandableMeasurementCard';
 
@@ -368,10 +367,6 @@ export default function ProfileScreen() {
   const [overviewSubTab, setOverviewSubTab] = useState<OverviewSubTab>('recent');
   const [expandedMuscle, setExpandedMuscle] = useState<string | null>(null);
 
-  const activeHeatPalette = useMemo(() => {
-    const themeId = (theme as any)?.id || 'signature';
-    return THEME_HEAT_PALETTES[themeId] || DEFAULT_HEAT_PALETTE;
-  }, [theme]);
 
   // Month selector state for Muscle Activity anatomy
   const [selectedMonthDate, setSelectedMonthDate] = useState<Date>(new Date());
@@ -726,7 +721,7 @@ export default function ProfileScreen() {
                         secondaryMuscles={monthlyMuscles.secondary}
                         setCounts={monthlyMuscleSetCounts}
                         view="front"
-                        size={silhouetteSize - 16}
+                        size={silhouetteSize}
                       />
                     </View>
                     <View style={styles.bodyVizItem}>
@@ -736,24 +731,12 @@ export default function ProfileScreen() {
                         secondaryMuscles={monthlyMuscles.secondary}
                         setCounts={monthlyMuscleSetCounts}
                         view="back"
-                        size={silhouetteSize - 16}
+                        size={silhouetteSize}
                       />
                     </View>
                   </View>
                 )}
 
-                {/* Heat Intensity Scale Legend */}
-                <View style={styles.legendContainer}>
-                  <View style={styles.heatScaleRow}>
-                    <Text style={[styles.heatScaleLabel, { color: theme.colors.textSecondary }]}>LOW</Text>
-                    <View style={styles.heatScaleBar}>
-                      {activeHeatPalette.map((col, idx) => (
-                        <View key={idx} style={[styles.heatScaleSegment, { backgroundColor: col }]} />
-                      ))}
-                    </View>
-                    <Text style={[styles.heatScaleLabel, { color: theme.colors.textSecondary }]}>HIGH</Text>
-                  </View>
-                </View>
               </View>
 
               {/* OVERVIEW SUB-TABS: [ RECENT EXERCISES ] [ MUSCLES ] */}
@@ -1255,37 +1238,10 @@ const styles = StyleSheet.create({
   monthTitleText: { fontSize: 13, fontWeight: '900', letterSpacing: 1 },
   monthDateRangeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
 
-  bodyVizRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, paddingVertical: spacing.xs },
-  bodyVizItem: { flex: 1, alignItems: 'center', gap: spacing.xs },
-  bodyVizLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  bodyVizRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.md },
+  bodyVizItem: { flex: 1, alignItems: 'center', gap: spacing.sm },
+  bodyVizLabel: { color: colors.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 2 },
 
-  legendContainer: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.sm,
-    alignItems: 'center',
-  },
-  heatScaleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  heatScaleBar: {
-    flexDirection: 'row',
-    height: 6,
-    width: 120,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  heatScaleSegment: {
-    flex: 1,
-    height: '100%',
-  },
-  heatScaleLabel: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
   legendRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
