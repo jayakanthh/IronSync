@@ -58,7 +58,46 @@ export async function deleteProgressPhoto(userId: string, photoId: string): Prom
 
 /** The two photos a comparison should open with: oldest and newest of an angle. */
 export function bookendsFor(photos: ProgressPhoto[], angle: PhotoAngle): ProgressPhoto[] {
-  const ofAngle = photos.filter((p) => p.angle === angle);
+  const ofAngle = photos
+    .filter((p) => p.angle === angle)
+    .sort((a, b) => a.date.localeCompare(b.date));
   if (ofAngle.length < 2) return ofAngle;
-  return [ofAngle[ofAngle.length - 1], ofAngle[0]]; // list is newest-first
+  return [ofAngle[0], ofAngle[ofAngle.length - 1]];
+}
+
+/** One row per day, newest first, with each angle in its slot or absent. */
+export interface PhotoDay {
+  date: string;
+  front?: ProgressPhoto;
+  side?: ProgressPhoto;
+  back?: ProgressPhoto;
+}
+
+export function groupByDate(photos: ProgressPhoto[]): PhotoDay[] {
+  const byDate = new Map<string, PhotoDay>();
+  for (const p of photos) {
+    const row = byDate.get(p.date) ?? { date: p.date };
+    row[p.angle] = p;
+    byDate.set(p.date, row);
+  }
+  return Array.from(byDate.values()).sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/**
+ * The date a photo was actually taken, from its EXIF. Backdating an old photo
+ * shouldn't mean typing a date the file already knows.
+ *
+ * EXIF dates look like "2026:08:12 07:41:03" — colons in the date part, which
+ * is why this can't just be handed to Date().
+ */
+export function exifDate(exif: Record<string, any> | null | undefined): string | null {
+  const raw = exif?.DateTimeOriginal ?? exif?.DateTime ?? exif?.DateTimeDigitized;
+  if (typeof raw !== 'string') return null;
+  const m = raw.match(/^(\d{4})[:-](\d{2})[:-](\d{2})/);
+  if (!m) return null;
+  const iso = `${m[1]}-${m[2]}-${m[3]}`;
+  // Guard against a camera clock set to 1970 or the future.
+  const year = Number(m[1]);
+  if (year < 2000 || year > new Date().getFullYear()) return null;
+  return iso;
 }

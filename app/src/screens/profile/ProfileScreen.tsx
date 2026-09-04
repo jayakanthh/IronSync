@@ -36,7 +36,9 @@ import {
   addProgressPhoto,
   bookendsFor,
   deleteProgressPhoto,
+  exifDate,
   getProgressPhotos,
+  groupByDate,
 } from '../../services/index';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
 import type { MuscleId } from '../../components/anatomy';
@@ -46,6 +48,18 @@ import ExpandableMeasurementCard from '../../components/measurements/ExpandableM
 type MeTab = 'overview' | 'exercises' | 'measures' | 'photos';
 
 /** Tab keys are internal; these are what you actually read on screen. */
+const ANGLES: PhotoAngle[] = ['front', 'side', 'back'];
+
+/** "2026-09-04" → "4 Sep" — the row label, kept short so the cells get the width. */
+function formatPhotoDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const now = new Date();
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleDateString('default',
+    sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: '2-digit' });
+}
+
 const ME_TAB_LABELS: Record<MeTab, string> = {
   overview: 'Overview',
   exercises: "PR's",
@@ -376,7 +390,6 @@ export default function ProfileScreen() {
   const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
-  const [photoAngle, setPhotoAngle] = useState<PhotoAngle>('front');
   const [viewingPhoto, setViewingPhoto] = useState<ProgressPhoto | null>(null);
   const [comparing, setComparing] = useState<ProgressPhoto[] | null>(null);
 
@@ -457,28 +470,45 @@ export default function ProfileScreen() {
   /**
    * Resize before storing: the image lives inside a Firestore document, so a
    * camera original would blow the 1MiB limit on its own.
+   *
+   * `forDate` fills a specific empty slot. Left out, a library photo is filed
+   * under the day its EXIF says it was taken — backdating an old photo without
+   * making anyone type a date the file already knows.
    */
-  const addPhoto = async (source: 'camera' | 'library') => {
+  const addPhoto = async (source: 'camera' | 'library', angle: PhotoAngle, forDate?: string) => {
     if (!profile) return;
     const picked =
       source === 'camera'
         ? await ImagePicker.launchCameraAsync({ quality: 1 })
-        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1 });
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, exif: true });
     if (picked.canceled || !picked.assets?.[0]?.uri) return;
+    const asset = picked.assets[0];
+
+    // Camera shots are today by definition; library ones can be from any day.
+    const taken = forDate ?? (source === 'library' ? exifDate(asset.exif) ?? todayISO() : todayISO());
+
+    if (photos.some((p) => p.date === taken && p.angle === angle)) {
+      Alert.alert(
+        'Already have one',
+        `There's a ${angle} photo for ${taken}. Delete it first if you want to replace it.`,
+      );
+      return;
+    }
 
     setPhotoBusy(true);
     try {
       const shrunk = await ImageManipulator.manipulateAsync(
-        picked.assets[0].uri,
+        asset.uri,
         [{ resize: { width: PHOTO_WIDTH } }],
         { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
       if (!shrunk.base64) throw new Error('Could not read that image.');
       await addProgressPhoto(profile.id, {
-        date: todayISO(),
-        angle: photoAngle,
+        date: taken,
+        angle,
         image: `data:image/jpeg;base64,${shrunk.base64}`,
-        weightKg: profile.weightKg,
+        // Only meaningful for today — an old photo's weight isn't today's.
+        weightKg: taken === todayISO() ? profile.weightKg : undefined,
       });
       await loadPhotos();
     } catch (e: any) {
@@ -488,11 +518,13 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleAddPhoto = () => {
-    Alert.alert(`New ${photoAngle} photo`, 'Where from?', [
+  /** Tapping an empty slot fills exactly that day and angle. */
+  const handleAddFor = (angle: PhotoAngle, date?: string) => {
+    const where = date && date !== todayISO() ? ` for ${date}` : '';
+    Alert.alert(`${angle[0].toUpperCase() + angle.slice(1)} photo${where}`, 'Where from?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Take one', onPress: () => addPhoto('camera') },
-      { text: 'Choose from library', onPress: () => addPhoto('library') },
+      { text: 'Take one', onPress: () => addPhoto('camera', angle, date) },
+      { text: 'Choose from library', onPress: () => addPhoto('library', angle, date) },
     ]);
   };
 
@@ -512,20 +544,29 @@ export default function ProfileScreen() {
     ]);
   };
 
-  /** Only the angle currently selected — mixing them makes comparison useless. */
-  const photosOfAngle = useMemo(
-    () => photos.filter((p) => p.angle === photoAngle),
-    [photos, photoAngle],
-  );
-
+  /** Oldest against newest, for one angle — the whole point of the gallery. */
   const handleCompare = () => {
-    const pair = bookendsFor(photos, photoAngle);
-    if (pair.length < 2) {
-      Alert.alert('Not enough yet', `Take at least two ${photoAngle} photos and you can put them side by side.`);
+    const options = (['front', 'side', 'back'] as PhotoAngle[]).filter(
+      (a) => photos.filter((p) => p.angle === a).length >= 2,
+    );
+    if (options.length === 0) {
+      Alert.alert(
+        'Not enough yet',
+        'Two photos of the same angle, taken on different days, and this puts them side by side.',
+      );
       return;
     }
-    setComparing(pair);
+    Alert.alert('Compare', 'Which angle?', [
+      { text: 'Cancel', style: 'cancel' },
+      ...options.map((a) => ({
+        text: a[0].toUpperCase() + a.slice(1),
+        onPress: () => setComparing(bookendsFor(photos, a)),
+      })),
+    ]);
   };
+
+  /** One row per day so the three angles line up across a single date. */
+  const photoDays = useMemo(() => groupByDate(photos), [photos]);
 
   const loadMeasuresData = useCallback(async () => {
     const uid = currentUserId();
@@ -1258,29 +1299,18 @@ export default function ProfileScreen() {
         {/* ================================================================ */}
         {activeTab === 'photos' && (
           <>
-            {/* Angle first: a comparison only means something like-for-like. */}
-            <View style={styles.angleRow}>
-              {(['front', 'side', 'back'] as PhotoAngle[]).map((a) => (
-                <TouchableOpacity
-                  key={a}
-                  style={[styles.anglePill, photoAngle === a && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }]}
-                  onPress={() => setPhotoAngle(a)}
-                >
-                  <Text style={[styles.anglePillText, photoAngle === a && { color: theme.colors.primaryForeground }]}>
-                    {a.toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
             <View style={styles.photoActions}>
-              <TouchableOpacity style={styles.photoAddBtn} onPress={handleAddPhoto} disabled={photoBusy}>
+              <TouchableOpacity
+                style={styles.photoAddBtn}
+                onPress={() => handleAddFor('front')}
+                disabled={photoBusy}
+              >
                 {photoBusy ? (
                   <ActivityIndicator size="small" color={colors.primaryDark} />
                 ) : (
                   <>
                     <Camera size={16} color={colors.primaryDark} />
-                    <Text style={styles.photoAddText}>Add {photoAngle} photo</Text>
+                    <Text style={styles.photoAddText}>Add photo</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -1291,36 +1321,56 @@ export default function ProfileScreen() {
 
             {loadingPhotos ? (
               <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
-            ) : photosOfAngle.length === 0 ? (
+            ) : photoDays.length === 0 ? (
               <View style={styles.photosEmptyContainer}>
                 <View style={styles.photosIconCircle}>
                   <Camera size={28} color={colors.textMuted} />
                 </View>
-                <Text style={styles.photosTitle}>No {photoAngle} photos yet</Text>
+                <Text style={styles.photosTitle}>No photos yet</Text>
                 <Text style={styles.photosDesc}>
-                  Take one now and another in a few weeks. Side by side is where you'll see what
-                  the scale misses.
+                  Take a front, side and back shot today, then again in a few weeks. Side by side
+                  is where you'll see what the scale misses.
                 </Text>
               </View>
             ) : (
-              <View style={styles.photoGrid}>
-                {photosOfAngle.map((p) => (
-                  <TouchableOpacity
-                    key={p.id}
-                    style={styles.photoCell}
-                    onPress={() => setViewingPhoto(p)}
-                    onLongPress={() => handleDeletePhoto(p)}
-                  >
-                    <Image source={{ uri: p.image }} style={styles.photoThumb} />
-                    <Text style={styles.photoDate}>{p.date}</Text>
-                    {p.weightKg ? (
-                      <Text style={styles.photoWeight}>
-                        {convertWeightToDisplay(p.weightKg, system).toFixed(1)} {getWeightUnit(system)}
-                      </Text>
-                    ) : null}
-                  </TouchableOpacity>
+              <>
+                <View style={styles.photoHeaderRow}>
+                  <Text style={styles.photoHeaderDate} />
+                  {ANGLES.map((a) => (
+                    <Text key={a} style={styles.photoHeaderAngle}>{a.toUpperCase()}</Text>
+                  ))}
+                </View>
+
+                {/* A row is a day; a gap is an angle that day is missing. */}
+                {photoDays.map((day) => (
+                  <View key={day.date} style={styles.photoDayRow}>
+                    <Text style={styles.photoRowDate}>{formatPhotoDate(day.date)}</Text>
+                    <View style={styles.photoRowCells}>
+                      {ANGLES.map((angle) => {
+                        const shot = day[angle];
+                        return shot ? (
+                          <TouchableOpacity
+                            key={angle}
+                            style={styles.photoCell}
+                            onPress={() => setViewingPhoto(shot)}
+                            onLongPress={() => handleDeletePhoto(shot)}
+                          >
+                            <Image source={{ uri: shot.image }} style={styles.photoThumb} />
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            key={angle}
+                            style={[styles.photoCell, styles.photoCellEmpty]}
+                            onPress={() => handleAddFor(angle, day.date)}
+                          >
+                            <Camera size={16} color={colors.textMuted} />
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
                 ))}
-              </View>
+              </>
             )}
 
             <Text style={styles.photoPrivacyNote}>
@@ -1664,17 +1714,6 @@ const styles = StyleSheet.create({
   meaTileUnit: { color: colors.primary, fontSize: 12, fontWeight: '700' },
 
   // Photos Tab premium empty state
-  angleRow: { flexDirection: 'row', gap: spacing.sm },
-  anglePill: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-  },
-  anglePillText: { color: colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 1 },
 
   photoActions: { flexDirection: 'row', gap: spacing.sm },
   photoAddBtn: {
@@ -1699,16 +1738,35 @@ const styles = StyleSheet.create({
   },
   photoCompareText: { color: colors.text, fontSize: 14, fontWeight: '700' },
 
-  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  photoCell: { width: '48%', gap: 4 },
+  photoHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
+  photoHeaderDate: { width: 48 },
+  photoHeaderAngle: {
+    flex: 1,
+    color: colors.textMuted,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textAlign: 'center',
+  },
+  photoDayRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  photoRowDate: { width: 48, color: colors.text, fontSize: 11, fontWeight: '700' },
+  photoRowCells: { flex: 1, flexDirection: 'row', gap: spacing.sm },
+  photoCell: { flex: 1 },
+  photoCellEmpty: {
+    aspectRatio: 3 / 4,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   photoThumb: {
     width: '100%',
     aspectRatio: 3 / 4,
     borderRadius: radius.md,
     backgroundColor: colors.surfaceAlt,
   },
-  photoDate: { color: colors.text, fontSize: 12, fontWeight: '700' },
-  photoWeight: { color: colors.textMuted, fontSize: 11 },
   photoPrivacyNote: {
     color: colors.textMuted,
     fontSize: 11,
