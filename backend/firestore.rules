@@ -38,6 +38,52 @@ service cloud.firestore {
       }
     }
 
+    // ---- Username registry ----
+    // usernames/{normalized} -> { uid }. Readable by anyone signed in so the
+    // sign-up screen can tell you a handle is taken; claimable only by the
+    // person taking it, and never reassignable to someone else.
+    match /usernames/{name} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ---- Public profiles ----
+    // Name, username and avatar — the bits other people legitimately need to
+    // render you in a list. Everything else about a user (email, weight, goals,
+    // health notes) stays behind the owner-only rule above.
+    match /publicProfiles/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
+
+    // ---- A friend's workouts ----
+    // 1-to-1 friends can see each other's training, which is the whole point of
+    // the crew. Two gates, both enforced here rather than in the client:
+    //   · the workout itself must be shared ('friends' or 'everyone'), and
+    //   · the owner must not have switched stats sharing off in Settings.
+    // Everything else under users/{uid} — measurements, health notes, nutrition —
+    // stays owner-only via the catch-all above.
+    function pairId(a, b) {
+      return a < b ? a + '_' + b : b + '_' + a;
+    }
+    function areFriends(a, b) {
+      return exists(/databases/$(database)/documents/friendships/$(pairId(a, b)));
+    }
+    function sharesStats(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.statsVisibleToFriends != false;
+    }
+    match /users/{userId}/workouts/{workoutId} {
+      // A query must constrain `visibility` itself, or it's rejected outright —
+      // see getFriendWorkouts in app/src/services/workouts/workouts.ts.
+      allow read: if isOwner(userId)
+                  || (isSignedIn()
+                      && resource.data.visibility in ['friends', 'everyone']
+                      && areFriends(request.auth.uid, userId)
+                      && sharesStats(userId));
+      allow write: if isOwner(userId);
+    }
+
     // ---- Shared exercise library: everyone signed-in reads; users add their own customs ----
     // (Seeded exercises are written via the Admin SDK / CLI, which bypasses these rules.)
     match /exercises/{exerciseId} {

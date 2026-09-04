@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, Image, Linking, Alert } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { ChevronLeft, Dumbbell, TrendingUp } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ChevronLeft, Dumbbell, TrendingUp, PlayCircle, Video } from 'lucide-react-native';
 import { colors, spacing, radius } from '../../theme/colors';
 import { Typography } from '../../components/ui/Typography';
 import { Card } from '../../components/ui/Card';
@@ -11,10 +12,12 @@ import type { Exercise, Workout, PersonalRecord } from '../../models/index';
 import { convertWeightToDisplay, getWeightUnit, getUnitSystem } from '../../utils/formatting/units';
 import { useCurrentUser } from '../../context/CurrentUser';
 import Svg, { Polyline } from 'react-native-svg';
+import MuscleSilhouette from '../../components/common/MuscleSilhouette';
 
 export default function ExerciseDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const { profile } = useCurrentUser();
   const exerciseId = route.params?.exerciseId;
   const system = profile ? getUnitSystem(profile) : 'metric';
@@ -93,15 +96,110 @@ export default function ExerciseDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <ChevronLeft size={24} color={colors.text} />
         </TouchableOpacity>
-        <Typography variant="h2">{exercise.name}</Typography>
-        <View style={{ width: 24 }} />
+        <Typography variant="h2" align="center" numberOfLines={2} style={styles.headerTitle}>
+          {exercise.name}
+        </Typography>
+        <View style={{ width: 32 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Demo media. A how-to video wins if the exercise has one; otherwise
+            the library's start/end frames; otherwise a slot left for later. */}
+        {exercise.videoUrl ? (
+          <TouchableOpacity
+            style={styles.videoBtn}
+            onPress={() =>
+              Linking.openURL(exercise.videoUrl!).catch(() =>
+                Alert.alert('Could not open', 'That video link could not be opened.'),
+              )
+            }
+          >
+            <PlayCircle size={22} color={colors.primaryDark} />
+            <Typography variant="bodyBold" color={colors.primaryDark}>Watch how-to</Typography>
+          </TouchableOpacity>
+        ) : exercise.images && exercise.images.length > 0 ? (
+          <View style={styles.frameRow}>
+            {exercise.images.slice(0, 2).map((uri, i) => (
+              <View key={uri} style={styles.frame}>
+                <Image source={{ uri }} style={styles.frameImg} resizeMode="cover" />
+                <Typography variant="caption" color={colors.textMuted} style={styles.frameLabel}>
+                  {i === 0 ? 'START' : 'END'}
+                </Typography>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.mediaPlaceholder}>
+            <Video size={24} color={colors.textMuted} />
+            <Typography variant="caption" color={colors.textMuted}>No demo for this exercise yet</Typography>
+          </View>
+        )}
+
+        {/* What it works */}
+        <Card style={styles.card}>
+          <Typography variant="bodyBold" style={styles.label}>WHAT IT WORKS</Typography>
+          <View style={styles.focusRow}>
+            <MuscleSilhouette
+              primaryMuscles={new Set([exercise.muscleGroup].filter(Boolean))}
+              secondaryMuscles={new Set(exercise.secondaryMuscles ?? [])}
+              view="both"
+              size={110}
+            />
+          </View>
+
+          <View style={styles.focusMeta}>
+            <Typography variant="caption" color={colors.textMuted}>PRIMARY</Typography>
+            <Typography variant="bodyBold" style={styles.capitalize}>{exercise.muscleGroup}</Typography>
+
+            {(exercise.secondaryMuscles?.length ?? 0) > 0 && (
+              <>
+                <Typography variant="caption" color={colors.textMuted} style={{ marginTop: 10 }}>ALSO HITS</Typography>
+                <Typography variant="body" style={styles.capitalize}>
+                  {exercise.secondaryMuscles!.join(', ')}
+                </Typography>
+              </>
+            )}
+          </View>
+
+          {/* Everything the library knows about the movement itself. */}
+          <View style={styles.chipRow}>
+            {([
+              exercise.equipment,
+              exercise.mechanic,
+              exercise.force && `${exercise.force} movement`,
+              exercise.level,
+              exercise.category,
+            ].filter(Boolean) as string[]).map((chip) => (
+              <View key={chip} style={styles.chip}>
+                <Typography variant="caption" style={styles.capitalize}>{chip}</Typography>
+              </View>
+            ))}
+          </View>
+        </Card>
+
+        {/* How to do it */}
+        <Card style={styles.card}>
+          <Typography variant="bodyBold" style={styles.label}>HOW TO DO IT</Typography>
+          {(exercise.instructions?.length ?? 0) === 0 ? (
+            <Typography variant="caption" color={colors.textMuted}>
+              No instructions on file for this one yet.
+            </Typography>
+          ) : (
+            exercise.instructions!.map((step, i) => (
+              <View key={i} style={styles.stepRow}>
+                <View style={styles.stepNum}>
+                  <Typography variant="caption" color={colors.primaryDark} style={{ fontWeight: '800' }}>{i + 1}</Typography>
+                </View>
+                <Typography variant="body" style={{ flex: 1, lineHeight: 20 }}>{step}</Typography>
+              </View>
+            ))
+          )}
+        </Card>
+
         <Card style={styles.card}>
           <Typography variant="bodyBold" style={styles.label}>SUMMARY STATS</Typography>
           <View style={styles.statsRow}>
@@ -161,12 +259,58 @@ export default function ExerciseDetailScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   center: { justifyContent: 'center', alignItems: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, paddingTop: 60, backgroundColor: colors.surface },
-  backBtn: { padding: spacing.xs },
-  scroll: { padding: spacing.md, gap: spacing.md },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, backgroundColor: colors.surface },
+  backBtn: { padding: spacing.xs, width: 32 },
+  // Long names ("Barbell Guillotine Bench Press") need room to wrap.
+  headerTitle: { flex: 1, marginHorizontal: spacing.sm },
+  scroll: { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
   card: { padding: spacing.md },
   label: { marginBottom: spacing.sm, color: colors.textMuted, fontSize: 11, letterSpacing: 1 },
   statsRow: { flexDirection: 'row', gap: spacing.md },
+  frameRow: { flexDirection: 'row', gap: spacing.sm },
+  frame: { flex: 1, aspectRatio: 1, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.surfaceAlt },
+  frameImg: { width: '100%', height: '100%' },
+  frameLabel: { position: 'absolute', left: 8, bottom: 6, fontSize: 10, letterSpacing: 1 },
+  mediaPlaceholder: {
+    height: 120,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  videoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 14,
+  },
+  focusRow: { alignItems: 'center', paddingBottom: spacing.sm },
+  focusMeta: { gap: 2 },
+  capitalize: { textTransform: 'capitalize' },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: spacing.md },
+  chip: {
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  stepRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  stepNum: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   statBox: { flex: 1, backgroundColor: colors.surfaceAlt, padding: spacing.md, borderRadius: radius.md, alignItems: 'center' },
   graphBox: { alignItems: 'center', marginVertical: spacing.md },
   historyRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { SimpleHeader } from '../../components/ui/SimpleHeader';
 import ProgressGraph from '../../components/ui/ProgressGraph';
@@ -40,7 +41,14 @@ export default function GoalDetailsScreen() {
     if (!profile) return;
     setLoading(true);
     const allGoals = await getGoals(profile.id);
-    const found = allGoals.find((g) => g.id === goalId);
+    // If this goal was replaced (createGoal pauses the old one when you change
+    // your target), show the goal that's actually active now rather than a
+    // paused one the user has moved on from.
+    const requested = allGoals.find((g) => g.id === goalId);
+    const found =
+      requested && requested.status !== 'active'
+        ? allGoals.find((g) => g.status === 'active') ?? requested
+        : requested;
     if (found) {
       setGoal(found);
       const mHistory = await getMeasurementHistory(profile.id, found.measurementType);
@@ -317,7 +325,20 @@ export default function GoalDetailsScreen() {
         {/* Actions */}
         <TouchableOpacity
           style={styles.outlineBtn}
-          onPress={() => navigation.navigate('GoalSetup')}
+          onPress={() =>
+            navigation.navigate('GoalSetup', {
+              prefill: {
+                startValue: goal.startValue,
+                targetValue: goal.targetValue,
+                // What's left of the original window, so a half-finished goal
+                // doesn't reset to six weeks.
+                days: Math.max(
+                  7,
+                  Math.round((goal.targetDate - Date.now()) / (24 * 60 * 60 * 1000)),
+                ),
+              },
+            })
+          }
         >
           <Text style={styles.outlineBtnText}>Edit Goal</Text>
         </TouchableOpacity>
@@ -333,7 +354,7 @@ export default function GoalDetailsScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.bg },
-  content: { padding: spacing.md, paddingBottom: 48 },
+  content: { padding: spacing.md, paddingBottom: TAB_BAR_SPACE },
 
   goalHeader: { alignItems: 'center', marginBottom: spacing.sm },
   goalType: { color: colors.textMuted, fontSize: 12, fontWeight: '700', letterSpacing: 1.2 },

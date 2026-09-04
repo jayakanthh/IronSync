@@ -15,7 +15,9 @@ import ThemesScreen from '../screens/settings/ThemesScreen';
 export type MeStackParamList = {
   Profile: undefined;
   Measurements: undefined;
-  GoalSetup: { isProfileSetup?: boolean } | undefined;
+  GoalSetup:
+    | { isProfileSetup?: boolean; prefill?: { startValue: number; targetValue: number; days: number } }
+    | undefined;
   GoalDetails: { goalId: string };
   LogMeasurement: undefined;
   MeasurementHistory: { type: MeasurementType; unit: string };
@@ -29,7 +31,7 @@ const Stack = createNativeStackNavigator<MeStackParamList>();
 
 export default function MeStack() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
       <Stack.Screen name="Profile" component={ProfileScreen} />
       <Stack.Screen name="Measurements" component={MeasurementsScreen} />
       <Stack.Screen name="GoalSetup" component={GoalSetupScreen} />

@@ -26,6 +26,9 @@ export interface FoodProduct {
   sodium?: number;
   barcode?: string;
   image?: string;
+  /** Words and word-prefixes of the name/brand — how search finds this food.
+   *  Built by buildSearchTokens(); absent on anything saved before it existed. */
+  searchTokens?: string[];
   source: string; // 'seeded' | 'custom'
   verified: boolean;
   createdBy?: string; // userId if custom
@@ -54,6 +57,46 @@ export interface FoodLogEntry {
   sodiumMg?: number;
   
   createdAt: number;
+}
+
+/** One food inside a saved meal — the loggable half of a FoodLogEntry. */
+export interface SavedMealItem {
+  name: string;
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  foodId?: string;
+  brand?: string;
+  quantity?: number;
+  unit?: string;
+  fiberG?: number;
+  sugarG?: number;
+  sodiumMg?: number;
+}
+
+/**
+ * A meal you've saved to re-log in one tap ("my usual breakfast").
+ * Foods are snapshotted, so editing the source food later won't rewrite history.
+ */
+export interface SavedMeal {
+  id: string;
+  name: string;
+  items: SavedMealItem[];
+  createdAt: number;
+}
+
+/** How much water you're aiming for, and the size of one tap. */
+export interface WaterPrefs {
+  targetMl: number;
+  incrementMl: number;
+}
+
+/** A day's water intake, in millilitres. */
+export interface WaterLog {
+  date: string; // YYYY-MM-DD
+  ml: number;
+  updatedAt: number;
 }
 
 export interface UserFavoriteFood {

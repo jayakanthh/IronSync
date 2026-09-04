@@ -10,7 +10,7 @@ import ExerciseLibraryScreen from './ExerciseLibraryScreen';
 import { getExercises, searchExercises, getMyPlans, getPublicPlans, getPlan, clonePlan, setActivePlan } from '../../services/index';
 import { exerciseToView, planToRoutine } from '../../adapters/adapters';
 import { startWorkout } from '../../utils/startWorkout';
-import StartWorkoutButton from '../../components/common/StartWorkoutButton';
+import StartWorkoutButton, { StartWorkoutScrollProvider } from '../../components/common/StartWorkoutButton';
 import { useCurrentUser } from '../../context/CurrentUser';
 import type { Routine, Exercise } from '../../types/ironsync';
 
@@ -82,90 +82,75 @@ export default function WorkoutsScreen({
   const { theme } = useTheme();
 
   return (
-    <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
-      {/* Exercise Hub Launch Header */}
-      <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-        <Text style={[styles.headerTitle, { color: theme.colors.textPrimary, fontWeight: theme.typography.headingWeight }]}>Exercise Hub</Text>
-        <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>Start training splits or log free workouts</Text>
-      </View>
+    <StartWorkoutScrollProvider>
+      <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
+        {/* Selector Tabs — first thing on the screen, so they carry the top inset. */}
+        <View style={[styles.segmentWrap, { marginTop: insets.top + spacing.sm, backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.border }]}>
+          <TouchableOpacity
+            style={[styles.segment, tab === 'routines' && [styles.segmentActive, { backgroundColor: theme.colors.primary }]]}
+            onPress={() => setTab('routines')}
+          >
+            <Text style={[styles.segmentText, { color: tab === 'routines' ? theme.colors.primaryForeground : theme.colors.textSecondary }]}>ROUTINES</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segment, tab === 'exercises' && [styles.segmentActive, { backgroundColor: theme.colors.primary }]]}
+            onPress={() => setTab('exercises')}
+          >
+            <Text style={[styles.segmentText, { color: tab === 'exercises' ? theme.colors.primaryForeground : theme.colors.textSecondary }]}>EXERCISES</Text>
+          </TouchableOpacity>
+        </View>
 
-      {/* Selector Tabs */}
-      <View style={[styles.segmentWrap, { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.border }]}>
-        <TouchableOpacity
-          style={[styles.segment, tab === 'routines' && [styles.segmentActive, { backgroundColor: theme.colors.primary }]]}
-          onPress={() => setTab('routines')}
-        >
-          <Text style={[styles.segmentText, { color: tab === 'routines' ? theme.colors.primaryForeground : theme.colors.textSecondary }]}>ROUTINES</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.segment, tab === 'exercises' && [styles.segmentActive, { backgroundColor: theme.colors.primary }]]}
-          onPress={() => setTab('exercises')}
-        >
-          <Text style={[styles.segmentText, { color: tab === 'exercises' ? theme.colors.primaryForeground : theme.colors.textSecondary }]}>EXERCISES</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Tab Screen Content */}
-      <View style={{ flex: 1 }}>
-        {tab === 'routines' ? (
-          <RoutineLibraryScreen
-            routines={routines}
-            currentUserName={profile?.displayName}
+        {/* Tab Screen Content */}
+        <View style={{ flex: 1 }}>
+          {tab === 'routines' ? (
+            <RoutineLibraryScreen
+              routines={routines}
+              currentUserName={profile?.displayName}
             onStartRoutine={(r: Routine) => {
+              // Show what the session actually holds before starting it. Public
+              // plans still go through Adopt first, so you own an editable copy.
               if (r.creator === profile?.displayName) {
-                // Preloads routine exercises into LogWorkout logger
-                navigation.navigate('LogWorkout', {
-                  exercises: r.exercises.map((ex) => ({
-                    exerciseId: ex.exerciseId,
-                    name: ex.name,
-                    targetSets: ex.sets,
-                    targetReps: parseInt(ex.reps) || 10,
-                  })),
-                  sourceLabel: r.name,
-                });
+                navigation.navigate('RoutinePreview', { planId: r.id });
               } else {
-                // Public plan → adopt first
                 navigation.navigate('AdoptPlan', { planId: r.id });
               }
             }}
             onSaveRoutineToggle={handleAdopt}
-            onSetDefault={handleSetDefault}
-            onCreateRoutineClick={() => navigation.navigate('PlanBuilder')}
-            onEditRoutine={(r: Routine) => navigation.navigate('PlanBuilder', { planId: r.id })}
-          />
-        ) : (
-          <ExerciseLibraryScreen
-            exercises={exercises}
-            onSelectExercise={(e: Exercise) => {
-              // Launches same LogWorkout logger preloaded with selected exercise
-              navigation.navigate('LogWorkout', {
-                exercises: [{ exerciseId: e.id, name: e.name, targetSets: e.defaultSets || 3, targetReps: parseInt(e.defaultReps) || 10 }],
-                sourceLabel: e.name,
-              });
-            }}
-            onSearchChange={(q: string) => {
-              if (q.trim().length >= 2) {
-                searchExercises(q.trim(), 100).then(res => setExercises(res.map(exerciseToView)));
-              } else if (q.trim().length === 0) {
-                getExercises(100).then(res => setExercises(res.data.map(exerciseToView)));
-              }
-            }}
-          />
-        )}
-      </View>
+              onSetDefault={handleSetDefault}
+              onCreateRoutineClick={() => navigation.navigate('PlanBuilder')}
+              onEditRoutine={(r: Routine) => navigation.navigate('PlanBuilder', { planId: r.id })}
+            />
+          ) : (
+            <ExerciseLibraryScreen
+              exercises={exercises}
+              onSelectExercise={(e: Exercise) => {
+                // Launches same LogWorkout logger preloaded with selected exercise
+                navigation.navigate('LogWorkout', {
+                  exercises: [{ exerciseId: e.id, name: e.name, targetSets: e.defaultSets || 3, targetReps: parseInt(e.defaultReps) || 10 }],
+                  sourceLabel: e.name,
+                });
+              }}
+              onSearchChange={(q: string) => {
+                if (q.trim().length >= 2) {
+                  searchExercises(q.trim(), 100).then(res => setExercises(res.map(exerciseToView)));
+                } else if (q.trim().length === 0) {
+                  getExercises(100).then(res => setExercises(res.data.map(exerciseToView)));
+                }
+              }}
+            />
+          )}
+        </View>
 
-      <StartWorkoutButton
-        onPress={() => startWorkout(profile, (params) => navigation.navigate('LogWorkout', params))}
-      />
-    </View>
+        <StartWorkoutButton
+          onPress={() => startWorkout(profile, (params) => navigation.navigate('LogWorkout', params))}
+        />
+      </View>
+    </StartWorkoutScrollProvider>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  header: { paddingHorizontal: spacing.md, paddingTop: spacing.md, gap: 2 },
-  headerTitle: { color: colors.text, fontSize: 22, fontWeight: '800' },
-  headerSubtitle: { color: colors.textMuted, fontSize: 13 },
   
   startWorkoutCta: {
     backgroundColor: colors.primary,

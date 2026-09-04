@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { Typography } from '../ui/Typography';
 import { Card } from '../ui/Card';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { Heart, MessageSquare, Award } from 'lucide-react-native';
 
 import type { Community, CommunityPost, Workout, Exercise } from '../../models/index';
@@ -92,13 +93,13 @@ function CommunityPostCard({
 
         {/* Stats box */}
         <View style={styles.statsRow}>
-          {post.durationMinutes && (
+          {!!post.durationMinutes && (
             <View style={styles.statBox}>
               <Typography variant="bodyBold">{post.durationMinutes}m</Typography>
               <Typography variant="caption" color={colors.textMuted}>Duration</Typography>
             </View>
           )}
-          {post.totalVolumeKg && (
+          {!!post.totalVolumeKg && (
             <View style={styles.statBox}>
               <Typography variant="bodyBold">{post.totalVolumeKg.toLocaleString()} kg</Typography>
               <Typography variant="caption" color={colors.textMuted}>Volume</Typography>
@@ -240,7 +241,7 @@ export default function WorkoutsTab({ community }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: spacing.md, gap: spacing.md, paddingBottom: 60 },
+  container: { padding: spacing.md, gap: spacing.md, paddingBottom: TAB_BAR_SPACE },
   empty: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 40 },
   postCard: { padding: spacing.md },
   postHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.xs },

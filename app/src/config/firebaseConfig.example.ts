@@ -1,7 +1,7 @@
 /**
  * TEMPLATE — copy this file to `firebaseConfig.ts` and fill in your project's values.
  *
- *   cp src/services/firebaseConfig.example.ts src/services/firebaseConfig.ts
+ *   cp src/config/firebaseConfig.example.ts src/config/firebaseConfig.ts
  *
  * Get these from: Firebase console → Project settings → "Your apps" → SDK setup & config.
  *

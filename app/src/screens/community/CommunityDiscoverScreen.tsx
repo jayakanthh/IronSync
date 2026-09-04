@@ -12,12 +12,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { ChevronLeft, Search, Compass, Globe, Key, Lock, Plus } from 'lucide-react-native';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { Typography } from '../../components/ui/Typography';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { discoverCommunities, searchCommunities, joinCommunity, joinByInviteCode } from '../../services/index';
 import type { Community } from '../../models/index';
+import { getCommunityBg } from '../../utils/formatting/avatarColors';
 
 export default function CommunityDiscoverScreen() {
   const insets = useSafeAreaInsets();
@@ -100,12 +102,6 @@ export default function CommunityDiscoverScreen() {
     }
   };
 
-  const getAvatarBg = (name: string) => {
-    const colorsList = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
-    let sum = 0;
-    for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
-    return colorsList[sum % colorsList.length];
-  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -203,7 +199,7 @@ export default function CommunityDiscoverScreen() {
             const isJoined = profile?.communityIds?.includes(item.id);
             return (
               <Card key={item.id} style={styles.commCard}>
-                <View style={[styles.avatar, { backgroundColor: getAvatarBg(item.name) }]}>
+                <View style={[styles.avatar, { backgroundColor: getCommunityBg(item.name) }]}>
                   <Typography variant="h2" style={styles.avatarText}>
                     {item.name.slice(0, 2).toUpperCase()}
                   </Typography>
@@ -282,7 +278,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.md,
     gap: spacing.md,
-    paddingBottom: 60,
+    paddingBottom: TAB_BAR_SPACE,
   },
   searchContainer: {
     flexDirection: 'row',

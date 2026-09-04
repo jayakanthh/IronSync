@@ -4,10 +4,11 @@ import { useNavigation } from '@react-navigation/native';
 import { Typography } from '../ui/Typography';
 import { Card } from '../ui/Card';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { Search, UserPlus, Play } from 'lucide-react-native';
 
 import type { Community, CommunityMember, Workout, Exercise } from '../../models/index';
-import { getExercisesByIds, getWorkoutHistory } from '../../services/index';
+import { getExercisesByIds, getFriendWorkouts } from '../../services/index';
 import { getRelativeTime } from '../../utils/formatting/relativeTime';
 import { getCommunityMembers } from '../../services/community/community';
 import { getAvatarBg } from '../../utils/formatting/avatarColors';
@@ -82,7 +83,8 @@ const RecentlyActiveBodyViz = ({ userId }: { userId: string }) => {
     let active = true;
     async function resolveRecentMuscles() {
       try {
-        const history = await getWorkoutHistory(userId, 1);
+        // Only what they've shared — their own history is owner-only.
+        const history = await getFriendWorkouts(userId, 1);
         if (!active || history.length === 0) return;
         const lastWkt = history[0];
         const exIds = lastWkt.entries.map(e => e.exerciseId);
@@ -319,7 +321,7 @@ export default function PeopleTab({ community }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: spacing.md, gap: spacing.lg, paddingBottom: 60 },
+  container: { padding: spacing.md, gap: spacing.lg, paddingBottom: TAB_BAR_SPACE },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator
+  Alert, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator
 } from 'react-native';
 import { Search, Bookmark, Check, Plus, X, Star, Dumbbell } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, spacing, radius } from '../../theme/colors';
 import { useCurrentUser } from '../../context/CurrentUser';
-import { getExercisesByIds, getUserRecentExercises } from '../../services/index';
+import { useNavigation } from '@react-navigation/native';
+import { getExercisesByIds, getUserRecentExercises, getMyPlans, updatePlan } from '../../services/index';
 import type { Exercise, MuscleGroup } from '../../types/ironsync';
+import type { Plan } from '../../models/index';
+import { useStartWorkoutScroll } from '../../components/common/StartWorkoutButton';
 
 interface ExerciseLibraryScreenProps {
   exercises: Exercise[];
@@ -41,9 +44,18 @@ export default function ExerciseLibraryScreen({
   onSearchChange,
 }: ExerciseLibraryScreenProps) {
   const { profile } = useCurrentUser();
+  const navigation = useNavigation<any>();
+  // Drives the floating Start-New-Workout pill: it slides away as you scroll down.
+  const scrollProps = useStartWorkoutScroll();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<CategoryType>('Chest');
   const [activeDetail, setActiveDetail] = useState<Exercise | null>(null);
+
+  // "Save to routine" sheet: which exercise we're saving, and the routines to pick from.
+  const [saveTarget, setSaveTarget] = useState<Exercise | null>(null);
+  const [myPlans, setMyPlans] = useState<Plan[]>([]);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
 
   // AsyncStorage-backed states
   const [favouriteIds, setFavouriteIds] = useState<string[]>([]);
@@ -137,13 +149,66 @@ export default function ExerciseLibraryScreen({
     await AsyncStorage.setItem(favKey, JSON.stringify(nextFavs));
   };
 
-  const toggleSaved = async (id: string) => {
+  const setSaved = async (id: string, saved: boolean) => {
     if (!saveKey) return;
-    const nextSaved = savedIds.includes(id)
-      ? savedIds.filter((item) => item !== id)
-      : [...savedIds, id];
+    const nextSaved = saved
+      ? Array.from(new Set([...savedIds, id]))
+      : savedIds.filter((item) => item !== id);
     setSavedIds(nextSaved);
     await AsyncStorage.setItem(saveKey, JSON.stringify(nextSaved));
+  };
+
+  /** Bookmark tap — ask which routine this exercise belongs in. */
+  const openSaveSheet = async (exercise: Exercise) => {
+    setSaveTarget(exercise);
+    if (!profile) return;
+    setPlansLoading(true);
+    try {
+      setMyPlans(await getMyPlans(profile.id));
+    } catch (e) {
+      console.error('Could not load routines:', e);
+      setMyPlans([]);
+    } finally {
+      setPlansLoading(false);
+    }
+  };
+
+  /** Append the exercise to one day of one routine, then bookmark it locally. */
+  const saveToRoutine = async (plan: Plan, dayIndex: number) => {
+    if (!saveTarget) return;
+    const day = plan.days[dayIndex];
+    if (day.exercises.some((e) => e.exerciseId === saveTarget.id)) {
+      Alert.alert('Already there', `${saveTarget.name} is already in ${plan.name}${plan.days.length > 1 ? ` — ${day.label}` : ''}.`);
+      return;
+    }
+    setSavingKey(`${plan.id}:${dayIndex}`);
+    try {
+      const days = plan.days.map((d, i) =>
+        i === dayIndex
+          ? {
+              ...d,
+              exercises: [
+                ...d.exercises,
+                {
+                  exerciseId: saveTarget.id,
+                  targetSets: saveTarget.defaultSets || 3,
+                  targetReps: parseInt(saveTarget.defaultReps) || 10,
+                },
+              ],
+            }
+          : d,
+      );
+      await updatePlan(plan.id, { name: plan.name, days, visibility: plan.visibility });
+      await setSaved(saveTarget.id, true);
+      const where = plan.days.length > 1 ? `${plan.name} — ${day.label}` : plan.name;
+      setSaveTarget(null);
+      Alert.alert('Saved', `${saveTarget.name} added to ${where}.`);
+    } catch (e) {
+      console.error('Could not save to routine:', e);
+      Alert.alert('Could not save', 'Something went wrong adding that to your routine. Try again.');
+    } finally {
+      setSavingKey(null);
+    }
   };
 
   const filtered = useMemo(() => {
@@ -189,7 +254,7 @@ export default function ExerciseLibraryScreen({
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" {...scrollProps}>
         {/* Quick Search */}
         <View style={styles.searchWrap}>
           <Search size={16} color={colors.textMuted} style={styles.searchIcon} />
@@ -242,7 +307,14 @@ export default function ExerciseLibraryScreen({
                 <TouchableOpacity
                   key={exercise.id}
                   style={styles.exerciseCard}
-                  onPress={() => setActiveDetail(exercise)}
+                  // Browsing → the full exercise page (how to do it, what it
+                  // works, your history). Picking for a routine → the quick
+                  // in-place peek, so you don't lose your place in the picker.
+                  onPress={() =>
+                    onAddExerciseToRoutine
+                      ? setActiveDetail(exercise)
+                      : navigation.navigate('ExerciseDetail', { exerciseId: exercise.id })
+                  }
                   activeOpacity={0.85}
                 >
                   <View style={styles.exerciseLeft}>
@@ -262,7 +334,7 @@ export default function ExerciseLibraryScreen({
                     <TouchableOpacity style={styles.iconBtn} onPress={() => toggleFavourite(exercise.id)}>
                       <Star size={16} color={isFav ? colors.milestone : colors.textMuted} fill={isFav ? colors.milestone : 'none'} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.iconBtn} onPress={() => toggleSaved(exercise.id)}>
+                    <TouchableOpacity style={styles.iconBtn} onPress={() => openSaveSheet(exercise)}>
                       <Bookmark size={16} color={isSaved ? colors.primary : colors.textMuted} fill={isSaved ? colors.primary : 'none'} />
                     </TouchableOpacity>
 
@@ -295,6 +367,78 @@ export default function ExerciseLibraryScreen({
         )}
       </ScrollView>
 
+      {/* "Save to routine" sheet — the bookmark asks where it should go. */}
+      <Modal visible={!!saveTarget} transparent animationType="slide" onRequestClose={() => setSaveTarget(null)}>
+        <View style={styles.modalOverlay}>
+          {saveTarget && (
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalKicker}>SAVE TO ROUTINE</Text>
+                  <Text style={styles.modalTitle}>{saveTarget.name}</Text>
+                </View>
+                <TouchableOpacity onPress={() => setSaveTarget(null)}>
+                  <X size={20} color={colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              {plansLoading ? (
+                <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.lg }} />
+              ) : myPlans.length === 0 ? (
+                <Text style={styles.saveEmpty}>
+                  You haven't built a routine yet. Create one from the Routines tab, then save exercises into it.
+                </Text>
+              ) : (
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
+                  {myPlans.map((plan) =>
+                    plan.days.map((day, dayIndex) => {
+                      const key = `${plan.id}:${dayIndex}`;
+                      const already = day.exercises.some((e) => e.exerciseId === saveTarget.id);
+                      return (
+                        <TouchableOpacity
+                          key={key}
+                          style={styles.routineRow}
+                          activeOpacity={0.85}
+                          disabled={!!savingKey}
+                          onPress={() => saveToRoutine(plan, dayIndex)}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.routineName} numberOfLines={1}>{plan.name}</Text>
+                            <Text style={styles.routineMeta} numberOfLines={1}>
+                              {plan.days.length > 1 ? `${day.label} • ` : ''}
+                              {day.exercises.length} exercise{day.exercises.length === 1 ? '' : 's'}
+                            </Text>
+                          </View>
+                          {savingKey === key ? (
+                            <ActivityIndicator color={colors.primary} />
+                          ) : already ? (
+                            <Check size={18} color={colors.primary} strokeWidth={2.5} />
+                          ) : (
+                            <Plus size={18} color={colors.textMuted} />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    }),
+                  )}
+                </ScrollView>
+              )}
+
+              {savedIds.includes(saveTarget.id) && (
+                <TouchableOpacity
+                  style={styles.unsaveBtn}
+                  onPress={async () => {
+                    await setSaved(saveTarget.id, false);
+                    setSaveTarget(null);
+                  }}
+                >
+                  <Text style={styles.unsaveText}>Remove from Saved</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+        </View>
+      </Modal>
+
       {/* Details modal */}
       <Modal visible={!!activeDetail} transparent animationType="slide" onRequestClose={() => setActiveDetail(null)}>
         <View style={styles.modalOverlay}>
@@ -312,10 +456,13 @@ export default function ExerciseLibraryScreen({
 
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: spacing.md }}>
                 <Image source={{ uri: activeDetail.image }} style={styles.modalImage} />
-                <Text style={styles.modalDesc}>
-                  {activeDetail.description ||
-                    'High activation movement designed for specific target muscle fiber recruitment, hypertrophy, and strength development.'}
-                </Text>
+                {activeDetail.description ? (
+                  <Text style={styles.modalDesc}>{activeDetail.description}</Text>
+                ) : (
+                  <Text style={[styles.modalDesc, { fontStyle: 'italic' }]}>
+                    No description on file for this exercise yet.
+                  </Text>
+                )}
 
                 {!!activeDetail.tips && activeDetail.tips.length > 0 && (
                   <View style={styles.tipsBox}>
@@ -450,6 +597,28 @@ const styles = StyleSheet.create({
   },
   modalKicker: { color: colors.primary, fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
   modalTitle: { color: colors.text, fontSize: 18, fontWeight: '800' },
+  saveEmpty: {
+    color: colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    paddingVertical: spacing.lg,
+    textAlign: 'center',
+  },
+  routineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  routineName: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  routineMeta: { color: colors.textMuted, fontSize: 12, marginTop: 2 },
+  unsaveBtn: { alignItems: 'center', paddingTop: spacing.md },
+  unsaveText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
   modalImage: { height: 180, borderRadius: radius.md, backgroundColor: 'rgba(0,0,0,0.4)' },
   modalDesc: { color: '#d4d4d4', fontSize: 13, lineHeight: 20 },
   tipsBox: { backgroundColor: '#121517', padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: '#262626', gap: 4 },

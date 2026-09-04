@@ -41,4 +41,6 @@ yarn-error.*
 /android
 
 # IronSync: real firebase config (each dev supplies their own)
+src/config/firebaseConfig.ts
+# old location, kept so a stale copy can never be committed
 src/services/firebaseConfig.ts

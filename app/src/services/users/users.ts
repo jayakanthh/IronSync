@@ -3,7 +3,7 @@
  * Owner: jaikanth (backend).
  */
 import { arrayRemove, arrayUnion, doc, getDoc, setDoc, updateDoc, deleteDoc, getDocs, collection, query, where, limit } from 'firebase/firestore';
-import type { User, Weekday } from '../../models/index';
+import type { PublicProfile, User, Weekday } from '../../models/index';
 import { auth, db } from '../../config/firebase';
 
 const userRef = (userId: string) => doc(db, 'users', userId);
@@ -63,6 +63,8 @@ export interface OnboardingData {
   heightCm?: number;
   weightKg?: number;
   goal?: User['goal'];
+  /** Which body the muscle map draws on. */
+  gender?: User['gender'];
   trainingDays: Weekday[];
 }
 
@@ -86,6 +88,7 @@ export async function completeOnboarding(
     heightCm: data.heightCm,
     weightKg: data.weightKg,
     goal: data.goal,
+    gender: data.gender,
     trainingDays: data.trainingDays,
     currentStreak: 0,
     longestStreak: 0,
@@ -148,18 +151,24 @@ export async function saveUsername(userId: string, username: string): Promise<vo
   });
 }
 
-/** Search users by username prefix */
-export async function searchUsersByUsername(queryText: string): Promise<User[]> {
+/**
+ * Search people by username prefix.
+ *
+ * Reads publicProfiles rather than users: profile documents are owner-only, so
+ * a query across the users collection is denied outright. Returns the public
+ * view — identity plus whatever each person shares.
+ */
+export async function searchUsersByUsername(queryText: string): Promise<PublicProfile[]> {
   const cleanQuery = queryText.trim().toLowerCase().replace(/^@/, '');
   if (!cleanQuery) return [];
   const q = query(
-    collection(db, 'users'),
+    collection(db, 'publicProfiles'),
     where('normalizedUsername', '>=', cleanQuery),
     where('normalizedUsername', '<=', cleanQuery + '\uf8ff'),
     limit(20)
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => d.data() as User);
+  return snap.docs.map((d) => d.data() as PublicProfile);
 }
 
 /** Look up a user by exact username */

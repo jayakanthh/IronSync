@@ -2,11 +2,10 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { NavigationProp, useFocusEffect } from '@react-navigation/native';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import HomeScreen from './HomeScreen';
-import { initialUserProfile } from '../../data/mockData';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { userToProfile } from '../../adapters/adapters';
 import { startWorkout } from '../../utils/startWorkout';
-import StartWorkoutButton from '../../components/common/StartWorkoutButton';
+import StartWorkoutButton, { StartWorkoutScrollProvider } from '../../components/common/StartWorkoutButton';
 import { TopHeader } from '../../components/common/TopHeader';
 import {
   getPlan,
@@ -14,7 +13,8 @@ import {
   getFoodLog,
   sumDay,
   getWorkoutHistory,
-  getCommunityWorkouts,
+  getFriends,
+  getFriendWorkouts,
   getTrainingNowMembers,
   todayISO,
   subscribeToNotifications,
@@ -25,11 +25,31 @@ import { useTheme } from '../../theme/colors';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+/** Neutral defaults for the parts of the UI view-model the backend doesn't track. */
+const EMPTY_PROFILE: UserProfile = {
+  id: '',
+  name: '',
+  avatar: '',
+  email: '',
+  currentWeight: 0,
+  targetWeight: 0,
+  weightChangeThisWeek: 0,
+  weightPacingAhead: 0,
+  goalDays: 0,
+  goalTargetDate: '',
+  goalProgressPercent: 0,
+  caloriesToday: 0,
+  activityMinutesToday: 0,
+};
+
 export default function HomeScreenContainer({ navigation }: { navigation: NavigationProp<any> }) {
   const { theme } = useTheme();
   const { profile } = useCurrentUser();
-  const [today, setToday] = useState<{ title: string; subtitle: string } | undefined>(undefined);
+  const [today, setToday] = useState<
+    { title: string; subtitle: string; state: 'workout' | 'rest' | 'none' } | undefined
+  >(undefined);
   const [calories, setCalories] = useState(0);
+  const [activityMinutes, setActivityMinutes] = useState(0);
   const [workoutsList, setWorkoutsList] = useState<any[]>([]);
   const [trainingNowList, setTrainingNowList] = useState<TrainingBuddy[]>([]);
   const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
@@ -58,11 +78,16 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
         const day = plan.days.find((d) => d.label === todayLabel);
         setToday(
           day
-            ? { title: `${plan.name} · ${todayLabel}`, subtitle: `${day.exercises.length} exercises` }
-            : { title: 'Rest day 😌', subtitle: plan.name },
+            ? {
+                title: `${plan.name} · ${todayLabel}`,
+                subtitle: `${day.exercises.length} exercises`,
+                state: 'workout',
+              }
+            // Your default routine schedules nothing for today.
+            : { title: 'Rest day', subtitle: `${plan.name} has nothing scheduled today`, state: 'rest' },
         );
       } else {
-        setToday({ title: 'No plan yet', subtitle: 'Create one in Workouts →' });
+        setToday({ title: 'No plan yet', subtitle: 'Create one in Workouts →', state: 'none' });
       }
 
       // Calories Today
@@ -72,32 +97,38 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
 
       // User's own workout history
       const myWorkouts = await getWorkoutHistory(profile.id, 10);
+
+      // "Activity" is today's logged training, not a guess — it used to be the
+      // literal string "1h 5m".
+      const today = todayISO();
+      setActivityMinutes(
+        myWorkouts
+          .filter((w) => w.date === today)
+          .reduce((sum, w) => sum + (w.durationMinutes || 0), 0),
+      );
       
-      // Community shared workouts (respecting visibility rules)
-      const communityWorkoutsList: any[] = [];
-      if (profile.communityIds && profile.communityIds.length > 0) {
-        const results = await Promise.all(
-          profile.communityIds.map((cid) => getCommunityWorkouts(cid, 10))
-        );
-        results.flat().forEach((post) => {
-          // Check if workout is not private and author is not already me (to avoid duplication)
-          if (post.authorId !== profile.id) {
-            communityWorkoutsList.push({
-              id: post.id,
-              creatorName: post.authorName,
-              title: post.workoutName || 'Shared Workout',
-              notes: '',
-              mode: post.sessionType || 'solo',
-              durationMinutes: post.durationMinutes || 45,
-              totalSets: post.prCount || 0, // Fallback placeholder logic for sets
-              volumeKg: post.totalVolumeKg || 0,
-              displayDate: new Date(post.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
-              createdAt: post.createdAt,
-              partnerNames: post.partnerNames || [],
-            });
-          }
-        });
-      }
+      // Friends' activity, read straight from their own workouts — they're
+      // shared with friends unless they said otherwise (see firestore.rules).
+      const friends = await getFriends(profile.id);
+      const friendFeeds = await Promise.all(
+        friends.map(async (f) => {
+          const workouts = await getFriendWorkouts(f.friendId, 10);
+          return workouts.map((w) => ({
+            id: w.id,
+            creatorName: f.name,
+            title: w.planName || 'Workout Session',
+            notes: w.notes || '',
+            mode: w.workoutType || (w.sessionId ? 'duo' : 'solo'),
+            durationMinutes: w.durationMinutes ?? 0,
+            totalSets: w.entries.reduce((sum, entry) => sum + entry.sets.length, 0),
+            volumeKg: w.totalVolumeKg || 0,
+            displayDate: new Date(w.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+            createdAt: w.createdAt,
+            partnerNames: w.duoPartnerName ? [w.duoPartnerName] : [],
+          }));
+        }),
+      );
+      const friendWorkoutsList = friendFeeds.flat();
 
       // Map user's workouts to the UI representation
       const mappedMyWorkouts = myWorkouts.map((w) => ({
@@ -106,7 +137,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
         title: w.planName || 'Workout Session',
         notes: w.notes || '',
         mode: w.sessionId ? 'duo' : 'solo',
-        durationMinutes: w.durationMinutes || 45,
+        durationMinutes: w.durationMinutes ?? 0,
         totalSets: w.entries.reduce((sum, entry) => sum + entry.sets.length, 0),
         volumeKg: w.totalVolumeKg || 0,
         displayDate: new Date(w.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
@@ -115,7 +146,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
       }));
 
       // Combine and sort by date descending
-      const combined = [...mappedMyWorkouts, ...communityWorkoutsList].sort(
+      const combined = [...mappedMyWorkouts, ...friendWorkoutsList].sort(
         (a, b) => b.createdAt - a.createdAt
       );
       setWorkoutsList(combined);
@@ -131,7 +162,7 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
             trainingNowMap.set(member.userId, {
               id: member.userId,
               name: member.displayName,
-              avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', // placeholder avatar
+              avatar: '', // Avatar resolves the real one from their public profile
               status: 'in-workout',
               activityTitle: member.currentActivity || 'Training Now',
               streakDays: 0,
@@ -161,44 +192,72 @@ export default function HomeScreenContainer({ navigation }: { navigation: Naviga
     );
   }
 
-  // Construct UserProfile for the view
+  // The view-model wants more fields than we track; the ones we don't are
+  // zeroed rather than filled with plausible-looking numbers.
   const user: UserProfile = {
-    ...initialUserProfile,
+    ...EMPTY_PROFILE,
     id: profile.id,
     name: profile.displayName,
     email: profile.email,
+    // The mock profile carries a stock photo; only a real uploaded one counts.
+    avatar: profile.photoURL || '',
     currentWeight: profile.weightKg || 75,
     caloriesToday: calories,
+    activityMinutesToday: activityMinutes,
+  };
+
+  /**
+   * Today's card opens the plan preview (what you're about to do) rather than
+   * dropping straight into the logger. With no plan set there's nothing to
+   * preview, so fall back to starting a free workout.
+   */
+  const openTodaysPlan = () => {
+    const planId = profile?.activePlanId;
+    if (!planId) return startWorkoutFromHome();
+    navigation.navigate('Workouts', {
+      screen: 'RoutinePreview',
+      params: { planId },
+      initial: false,
+    });
   };
 
   const startWorkoutFromHome = () =>
-    startWorkout(profile, (params) => navigation.navigate('Workouts', { screen: 'LogWorkout', params }));
+    // initial: false keeps WorkoutsHome under the logger, so closing it lands
+    // on the Library instead of an empty stack.
+    startWorkout(profile, (params) =>
+      navigation.navigate('Workouts', { screen: 'LogWorkout', params, initial: false }),
+    );
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
-      <TopHeader
-        user={user}
-        unreadNotifsCount={unreadNotifsCount}
-        onAvatarPress={() => navigation.navigate('Profile')}
-        onNotificationPress={() => navigation.navigate('Notifications')}
-        onOpenStreak={() => navigation.navigate('Streak')}
-        onOpenStrengthPR={() => navigation.navigate('StrengthPR')}
-      />
-      <HomeScreen
-        user={user}
-        buddies={trainingNowList}
-        history={workoutsList}
-        todayTitle={today?.title}
-        todaySubtitle={today?.subtitle}
-        onFindMatchClick={() => navigation.navigate('Workouts')} // Fallback: Route to routines
-        onStartTodayPlan={() => startWorkoutFromHome()}
-        onSelectBuddyWorkout={(buddy) => {
-          // If buddy is training, creator invites B or joins
-          navigation.navigate('Community');
-        }}
-      />
-      <StartWorkoutButton onPress={startWorkoutFromHome} />
-    </View>
+    <StartWorkoutScrollProvider>
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <TopHeader
+          user={user}
+          unreadNotifsCount={unreadNotifsCount}
+          // Profile is a screen inside the Me tab's stack, not a route the
+          // Home tab can reach directly.
+          onAvatarPress={() => navigation.navigate('Me', { screen: 'Profile' })}
+          onNotificationPress={() => navigation.navigate('Notifications')}
+          onOpenStreak={() => navigation.navigate('Streak')}
+          onOpenStrengthPR={() => navigation.navigate('StrengthPR')}
+        />
+        <HomeScreen
+          user={user}
+          buddies={trainingNowList}
+          history={workoutsList}
+          todayTitle={today?.title}
+          todaySubtitle={today?.subtitle}
+          todayState={today?.state}
+          onFindMatchClick={() => navigation.navigate('Workouts')} // Fallback: Route to routines
+          onStartTodayPlan={openTodaysPlan}
+          onSelectBuddyWorkout={(buddy) => {
+            // If buddy is training, creator invites B or joins
+            navigation.navigate('Community');
+          }}
+        />
+        <StartWorkoutButton onPress={startWorkoutFromHome} />
+      </View>
+    </StartWorkoutScrollProvider>
   );
 }
 

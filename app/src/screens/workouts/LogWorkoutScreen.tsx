@@ -15,6 +15,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import {
@@ -67,6 +68,8 @@ import {
   heartbeat,
 } from '../../services/index';
 import { useCurrentUser } from '../../context/CurrentUser';
+import SwipeToDelete from '../../components/common/SwipeToDelete';
+import { useActiveWorkout } from '../../context/ActiveWorkout';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
 
 import {
@@ -128,6 +131,7 @@ export default function LogWorkoutScreen({
   };
 }) {
   const { refresh, profile } = useCurrentUser();
+  const activeWorkout = useActiveWorkout();
   const insets = useSafeAreaInsets();
 
   const buildInitialItems = useCallback((): LoggedExercise[] => {
@@ -353,6 +357,17 @@ export default function LogWorkoutScreen({
   // the screen gets "stuck". Fall back to the Workouts home in that case.
   const dismiss = useCallback(() => {
     const nav = navigation as any;
+    const index = nav.getState?.()?.index ?? 0;
+
+    // Opened straight from another tab, this can be the ONLY route in the
+    // Workouts stack. POP_TO_TOP then has nothing to pop, goes unhandled by
+    // every navigator, and the screen stays stuck — so swap it out instead.
+    if (index === 0) {
+      if (typeof nav.replace === 'function') nav.replace('WorkoutsHome');
+      else nav.navigate('WorkoutsHome');
+      return;
+    }
+
     // popToTop clears this screen off the Workouts stack. Plain goBack() can
     // return to the *Home tab* while leaving the finished/discarded session on
     // the stack — so tapping Workouts later would restore the stale session.
@@ -386,6 +401,35 @@ export default function LogWorkoutScreen({
     dismiss();
   }, [profile, dismiss]);
 
+  /**
+   * Step away without losing the session: switch to another tab. This screen
+   * stays mounted on the Workouts stack, so the timer, sets and everything
+   * else survive; the mini bar offers Resume and Discard from wherever you go.
+   */
+  const handleMinimize = useCallback(() => {
+    activeWorkout.minimize();
+    const parent = (navigation as any).getParent?.();
+    if (parent) parent.navigate('Home');
+  }, [activeWorkout, navigation]);
+
+  /**
+   * Tell the rest of the app a workout is running: it powers the mini bar and
+   * hides "Start New Workout" while this is open. Unmounting means the session
+   * is genuinely over (finished or discarded) — minimising keeps us mounted.
+   */
+  useEffect(() => {
+    activeWorkout.begin(route?.params?.sourceLabel || 'Workout');
+    return () => activeWorkout.end();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Back on this screen by any route (mini bar or the tab) — hide the bar. */
+  useFocusEffect(
+    useCallback(() => {
+      activeWorkout.restore();
+    }, [activeWorkout]),
+  );
+
   const handleBackPress = useCallback(() => {
     Alert.alert(
       'Discard Workout?',
@@ -396,6 +440,16 @@ export default function LogWorkoutScreen({
       ]
     );
   }, [handleDiscardWorkout]);
+
+  /**
+   * Hand the mini bar our discard routine. It goes through handleBackPress so
+   * it asks "Discard Workout?" first — same confirmation as discarding from
+   * inside the logger.
+   */
+  useEffect(() => {
+    activeWorkout.registerDiscard(() => { handleBackPress(); });
+    return () => activeWorkout.registerDiscard(null);
+  }, [activeWorkout, handleBackPress]);
 
   useEffect(() => {
     const onBackPress = () => {
@@ -494,6 +548,24 @@ export default function LogWorkoutScreen({
           ],
         };
       })
+    );
+  };
+
+  /**
+   * Remove one set and renumber the rest. No confirm dialog: you have to swipe
+   * the row open and then tap Delete, which is deliberate enough on its own.
+   */
+  const removeSet = (exIndex: number, setIdx: number) => {
+    setItems((prev) =>
+      prev.map((item, i) => {
+        if (i !== exIndex) return item;
+        return {
+          ...item,
+          sets: item.sets
+            .filter((_, idx) => idx !== setIdx)
+            .map((s, idx) => ({ ...s, setNumber: idx + 1 })),
+        };
+      }),
     );
   };
 
@@ -1058,8 +1130,8 @@ export default function LogWorkoutScreen({
     <SafeAreaView edges={['top']} style={styles.screen}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleBackPress} style={styles.closeBtn}>
-          <X size={22} color={colors.text} />
+        <TouchableOpacity onPress={handleMinimize} style={styles.closeBtn}>
+          <ChevronDown size={24} color={colors.text} />
         </TouchableOpacity>
         <View style={styles.timerRow}>
           <Typography variant="bodyBold" style={styles.timerText}>{formatTimer(elapsedSeconds)}</Typography>
@@ -1165,12 +1237,18 @@ export default function LogWorkoutScreen({
                 <Card style={[styles.exCard, inGroup && styles.exCardInGroup]}>
                   {/* Exercise Title row */}
                   <View style={styles.exHeader}>
-                    <View style={{ flex: 1 }}>
+                    {/* Tap the name mid-workout for how to do it, what it works
+                        and your history — same page the routine preview opens. */}
+                    <TouchableOpacity
+                      style={{ flex: 1 }}
+                      activeOpacity={0.7}
+                      onPress={() => navigation.navigate('ExerciseDetail', { exerciseId: ex.exerciseId })}
+                    >
                       <Typography variant="bodyBold" style={styles.exName}>{ex.name}</Typography>
                       <Typography variant="caption" color={colors.textMuted}>
-                        {ex.muscleGroup || 'Muscle'} {isCardio ? '• Cardio' : ''}
+                        {ex.muscleGroup || 'Muscle'} {isCardio ? '• Cardio' : ''} • Tap for info
                       </Typography>
-                    </View>
+                    </TouchableOpacity>
                     <TouchableOpacity onPress={() => setShowExerciseOptions(ex.exerciseId)} style={styles.iconPadding}>
                       <MoreVertical size={18} color={colors.textMuted} />
                     </TouchableOpacity>
@@ -1216,7 +1294,14 @@ export default function LogWorkoutScreen({
                     const isDrop = set.setType === 'drop';
 
                     return (
-                      <View key={setIdx} style={[styles.setRow, set.completed && styles.setRowCompleted]}>
+                      // Swipe the row left to uncover Delete. No ✕ in the row
+                      // itself: the ✓ gets tapped fast mid-set and a
+                      // neighbouring delete button would get hit by mistake.
+                      <SwipeToDelete
+                        key={setIdx}
+                        style={[styles.setRow, set.completed && styles.setRowCompleted]}
+                        onDelete={() => removeSet(exIndex, setIdx)}
+                      >
                         {/* Set type badge dropdown/clicker */}
                         <TouchableOpacity
                           style={[styles.typeBadge, isWarmup && styles.badgeWarmup, isDrop && styles.badgeDrop]}
@@ -1318,7 +1403,7 @@ export default function LogWorkoutScreen({
                             <View style={styles.checkOutline} />
                           )}
                         </TouchableOpacity>
-                      </View>
+                      </SwipeToDelete>
                     );
                   })}
 

@@ -15,19 +15,26 @@ import {
 import Svg, { Circle, G } from 'react-native-svg';
 import {
   Utensils, Plus, Sparkles, Flame, Droplets, Trash2,
-  Bot, ChevronDown, ChevronUp, Check, Search, ArrowLeft, Heart, Edit2, Info, TrendingUp
+  Bot, ChevronDown, ChevronUp, Check, Search, ArrowLeft, Heart, Edit2, Info, TrendingUp,
+  ChevronLeft, ChevronRight, Bookmark, Copy, Minus, CalendarDays, ScanLine
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../../theme/colors';
 import { Card } from '../../components/ui/Card';
+import AnimatedRing from '../../components/ui/AnimatedRing';
+import AnimatedBar from '../../components/ui/AnimatedBar';
+import BarcodeScanner from '../../components/common/BarcodeScanner';
 import { Button } from '../../components/ui/Button';
 import { Typography } from '../../components/ui/Typography';
-import type { FoodLogEntry, Goal, Meal, NutritionTargets, FoodProduct } from '../../models/index';
+import type { FoodLogEntry, Goal, Meal, NutritionTargets, FoodProduct, SavedMeal } from '../../models/index';
 import {
   currentUserId, deleteFood, getFoodLog, getNutritionTargets,
-  logFood, setNutritionTargets, sumDay, todayISO,
-  seedFoodDatabase, searchFoods, createCustomFood, getCustomFoods,
-  getRecentFoods, getFrequentFoods, getFavoriteFoods, toggleFavoriteFood
+  logFood, setNutritionTargets, sumDay, sumMicros, todayISO, addDays, fromISODate,
+  searchFoods, createCustomFood, getCustomFoods,
+  getRecentFoods, getFrequentFoods, getFavoriteFoods, toggleFavoriteFood,
+  updateCustomFood, deleteCustomFood, lookupBarcode,
+  getWater, setWater, suggestWaterTarget, getWaterPrefs, setWaterPrefs, getFoodLogRange,
+  saveMeal, getSavedMeals, deleteSavedMeal, logSavedMeal, copyMealFromDate
 } from '../../services/index';
 import { useCurrentUser } from '../../context/CurrentUser';
 
@@ -96,13 +103,13 @@ function CircularProgress({ percent, color, size = 96, strokeWidth = 9 }: {
   return (
     <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
       <Circle cx={cx} cy={cy} r={r} stroke={colors.surfaceAlt} strokeWidth={strokeWidth} fill="none" />
-      <Circle
-        cx={cx} cy={cy} r={r}
-        stroke={color} strokeWidth={strokeWidth}
-        fill="none"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        strokeLinecap="round"
+      <AnimatedRing
+        cx={cx}
+        cy={cy}
+        r={r}
+        color={color}
+        strokeWidth={strokeWidth}
+        progress={Math.min(percent, 100) / 100}
       />
     </Svg>
   );
@@ -142,10 +149,15 @@ function MacroRings({ totals, targets, size = 172 }: {
           return (
             <React.Fragment key={i}>
               <Circle cx={c} cy={c} r={radius} stroke={r.color + '26'} strokeWidth={strokeWidth} fill="none" />
-              <Circle
-                cx={c} cy={c} r={radius}
-                stroke={r.color} strokeWidth={strokeWidth} fill="none"
-                strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)} strokeLinecap="round"
+              {/* Staggered so the rings fill one after another, not all at once. */}
+              <AnimatedRing
+                cx={c}
+                cy={c}
+                r={radius}
+                color={r.color}
+                strokeWidth={strokeWidth}
+                progress={pct}
+                delay={i * 90}
               />
             </React.Fragment>
           );
@@ -168,11 +180,72 @@ function MiniMacro({ color, label, consumed, target }: {
   );
 }
 
+/** One number in the reports grid: big value, unit, and what it measures. */
+function StatCell({ label, value, unit, color }: {
+  label: string; value: string; unit: string; color: string;
+}) {
+  return (
+    <View style={styles.statCell}>
+      <View style={styles.statValueRow}>
+        <Typography variant="h2" color={color}>{value}</Typography>
+        <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>{unit}</Typography>
+      </View>
+      <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>{label}</Typography>
+    </View>
+  );
+}
+
+/** First and last day of the month containing `iso`, as day strings. */
+function monthBounds(iso: string): { start: string; end: string } {
+  const d = fromISODate(iso);
+  const first = new Date(d.getFullYear(), d.getMonth(), 1, 12);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0, 12);
+  const fmt = (x: Date) =>
+    `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+  return { start: fmt(first), end: fmt(last) };
+}
+
+/** Same day-of-month in a month `delta` away (clamped by the JS Date rollover). */
+function shiftMonth(iso: string, delta: number): string {
+  const d = fromISODate(iso);
+  const shifted = new Date(d.getFullYear(), d.getMonth() + delta, 1, 12);
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+/**
+ * The cells of a month grid: leading blanks so the 1st lands under its weekday
+ * (Sunday-first), then every day of the month.
+ */
+function monthGrid(iso: string): (string | null)[] {
+  const { start, end } = monthBounds(iso);
+  const lead = fromISODate(start).getDay();
+  const daysInMonth = fromISODate(end).getDate();
+  return [
+    ...Array.from({ length: lead }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => addDays(start, i)),
+  ];
+}
+
+const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+/** Friendly name for a day: Today / Yesterday / "Mon 14 Sep". */
+function dayLabel(iso: string): string {
+  if (iso === todayISO()) return 'Today';
+  if (iso === addDays(todayISO(), -1)) return 'Yesterday';
+  return fromISODate(iso).toLocaleDateString('default', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
 export default function NutritionScreen() {
   const { profile } = useCurrentUser();
   const insets = useSafeAreaInsets();
 
   const [viewMode, setViewMode] = useState<ViewMode>('diary');
+  // Which day the diary is showing. Everything logs against this, not "now".
+  const [selectedDate, setSelectedDate] = useState<string>(todayISO());
+  // Month-grid picker: which month it's showing, and which of its days have food logged.
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState<string>(todayISO());
+  const [loggedDays, setLoggedDays] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [targets, setTargets] = useState<NutritionTargets | null>(null);
   const [dayEntries, setDayEntries] = useState<FoodLogEntry[]>([]);
@@ -181,7 +254,9 @@ export default function NutritionScreen() {
   const [setupVals, setSetupVals] = useState({ cals: '', protein: '', carbs: '', fat: '', fiber: '' });
   const [progressRange, setProgressRange] = useState<'week' | 'month'>('week');
   const [savingTargets, setSavingTargets] = useState(false);
-  const [progressDays, setProgressDays] = useState<{ date: string; calories: number }[]>([]);
+  const [progressDays, setProgressDays] = useState<
+    { date: string; calories: number; proteinG: number; carbsG: number; fatG: number; fiberG: number }[]
+  >([]);
   const [loadingProgress, setLoadingProgress] = useState(false);
 
   // UI State
@@ -194,7 +269,7 @@ export default function NutritionScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<FoodProduct[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchTab, setSearchTab] = useState<'search' | 'recent' | 'frequent' | 'favorites' | 'my_foods'>('search');
+  const [searchTab, setSearchTab] = useState<'search' | 'recent' | 'frequent' | 'favorites' | 'my_foods' | 'meals'>('search');
   const [recentFoods, setRecentFoods] = useState<FoodProduct[]>([]);
   const [frequentFoods, setFrequentFoods] = useState<FoodProduct[]>([]);
   const [favoriteFoods, setFavoriteFoods] = useState<FoodProduct[]>([]);
@@ -208,6 +283,11 @@ export default function NutritionScreen() {
   
   // Custom Food Form State
   const [showCustomModal, setShowCustomModal] = useState(false);
+  // Set when the custom-food form is editing an existing one rather than creating.
+  const [editingCustomFood, setEditingCustomFood] = useState<FoodProduct | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [customName, setCustomName] = useState('');
   const [customBrand, setCustomBrand] = useState('');
   const [customSize, setCustomSize] = useState('100');
@@ -216,6 +296,10 @@ export default function NutritionScreen() {
   const [customProtein, setCustomProtein] = useState('');
   const [customCarbs, setCustomCarbs] = useState('');
   const [customFat, setCustomFat] = useState('');
+  // The model has carried these three all along; the form never asked for them.
+  const [customFiber, setCustomFiber] = useState('');
+  const [customSugar, setCustomSugar] = useState('');
+  const [customSodium, setCustomSodium] = useState('');
 
   // Editing logged entry state
   const [editingEntry, setEditingEntry] = useState<FoodLogEntry | null>(null);
@@ -225,28 +309,32 @@ export default function NutritionScreen() {
 
   // Water local state
   const [waterMl, setWaterMl] = useState(0);
-  const waterTarget = 2500;
+  const [waterTarget, setWaterTarget] = useState(() => suggestWaterTarget((profile as any)?.weightKg));
+  const [waterStep, setWaterStep] = useState(250);
+  const [showWaterSettings, setShowWaterSettings] = useState(false);
+  const [waterForm, setWaterForm] = useState({ target: '', step: '' });
 
-  // Initial seed and load
-  useEffect(() => {
-    async function initDb() {
-      try {
-        await seedFoodDatabase();
-      } catch (err) {
-        console.error("Error seeding food database:", err);
-      }
-    }
-    initDb();
-  }, []);
+  // ── Saved meals ("my usual breakfast") ────────────────────────────────────
+  const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
+  const [saveMealFor, setSaveMealFor] = useState<Meal | null>(null);
+  const [saveMealName, setSaveMealName] = useState('');
 
   const loadData = useCallback(async () => {
     const uid = currentUserId();
     if (!uid) { setLoading(false); return; }
 
-    const [t, entries] = await Promise.all([
+    const [t, entries, water, meals, waterPrefs] = await Promise.all([
       getNutritionTargets(uid),
-      getFoodLog(uid, todayISO()),
+      getFoodLog(uid, selectedDate),
+      getWater(uid, selectedDate),
+      getSavedMeals(uid),
+      getWaterPrefs(uid),
     ]);
+    setWaterMl(water);
+    setSavedMeals(meals);
+    // Fall back to the bodyweight estimate until they set their own.
+    setWaterTarget(waterPrefs?.targetMl || suggestWaterTarget((profile as any)?.weightKg));
+    setWaterStep(waterPrefs?.incrementMl || 250);
 
     const goal = (profile as any)?.goal as Goal | undefined;
     const weightKg = (profile as any)?.weightKg;
@@ -269,7 +357,7 @@ export default function NutritionScreen() {
       setViewMode('setup');
     }
     setLoading(false);
-  }, [profile]);
+  }, [profile, selectedDate]);
 
   const handleSaveTargets = async () => {
     const uid = currentUserId();
@@ -314,15 +402,25 @@ export default function NutritionScreen() {
     setViewMode('progress');
     try {
       const n = range === 'week' ? 7 : 30;
-      const days = await Promise.all(
-        Array.from({ length: n }, (_, idx) => {
-          const i = n - 1 - idx;
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-          return getFoodLog(uid, iso).then((entries) => ({ date: iso, calories: sumDay(entries).dailyCalories }));
-        }),
-      );
+      const end = todayISO();
+      const start = addDays(end, -(n - 1));
+      // One range query for the whole window, then bucket by day.
+      const entries = await getFoodLogRange(uid, start, end);
+      const byDay = new Map<string, FoodLogEntry[]>();
+      entries.forEach((e) => byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]));
+
+      const days = Array.from({ length: n }, (_, idx) => {
+        const iso = addDays(start, idx);
+        const totals = sumDay(byDay.get(iso) ?? []);
+        return {
+          date: iso,
+          calories: totals.dailyCalories,
+          proteinG: totals.proteinG,
+          carbsG: totals.carbsG,
+          fatG: totals.fatG,
+          fiberG: totals.fiberG,
+        };
+      });
       setProgressDays(days);
     } catch {
       setProgressDays([]);
@@ -387,6 +485,7 @@ export default function NutritionScreen() {
 
   // Computed totals
   const totals = useMemo(() => sumDay(dayEntries), [dayEntries]);
+  const micros = useMemo(() => sumMicros(dayEntries), [dayEntries]);
   const t = targets ?? suggest(undefined);
 
   const caloriePercent = Math.min(100, Math.round((totals.dailyCalories / t.dailyCalories) * 100)) || 0;
@@ -394,6 +493,42 @@ export default function NutritionScreen() {
   const carbsPercent = Math.min(100, Math.round((totals.carbsG / t.carbsG) * 100)) || 0;
   const fatPercent = Math.min(100, Math.round((totals.fatG / t.fatG) * 100)) || 0;
   const waterPercent = Math.min(100, Math.round((waterMl / waterTarget) * 100));
+
+  const openWaterSettings = () => {
+    setWaterForm({ target: String(waterTarget), step: String(waterStep) });
+    setShowWaterSettings(true);
+  };
+
+  const handleSaveWaterPrefs = async () => {
+    const uid = currentUserId();
+    if (!uid) return;
+    const target = parseInt(waterForm.target, 10);
+    const step = parseInt(waterForm.step, 10);
+    if (!target || target < 100) return Alert.alert('Check the target', 'Enter a daily target of at least 100ml.');
+    if (!step || step < 10) return Alert.alert('Check the amount', 'Enter a quick-add amount of at least 10ml.');
+
+    setWaterTarget(target);
+    setWaterStep(step);
+    setShowWaterSettings(false);
+    try {
+      await setWaterPrefs(uid, { targetMl: target, incrementMl: step });
+    } catch {
+      Alert.alert('Could not save', 'Your water settings did not save. Try again.');
+    }
+  };
+
+  /** Water writes straight through — optimistic locally, saved per day. */
+  const adjustWater = async (deltaMl: number) => {
+    const uid = currentUserId();
+    if (!uid) return;
+    const next = Math.max(0, waterMl + deltaMl);
+    setWaterMl(next);
+    try {
+      await setWater(uid, selectedDate, next);
+    } catch {
+      setWaterMl(waterMl); // put it back if the write failed
+    }
+  };
   const calorieRemaining = Math.max(0, t.dailyCalories - totals.dailyCalories);
 
   // ── AI Parser Review Flow ──────────────────────────────────────────────────
@@ -417,11 +552,171 @@ export default function NutritionScreen() {
     if (!uid) return;
     setLoading(true);
     await Promise.all(
-      aiReviewedItems.map(item => logFood(uid, { ...item, date: todayISO() }))
+      aiReviewedItems.map(item => logFood(uid, { ...item, date: selectedDate }))
     );
     setAiPrompt('');
     setViewMode('diary');
     await loadData();
+  };
+
+  // ── Calendar ──────────────────────────────────────────────────────────────
+  /**
+   * Load which days of the visible month have any food logged, so the grid can
+   * dot them. One range query for the whole month.
+   */
+  const loadMonthDots = useCallback(async (monthAnchor: string) => {
+    const uid = currentUserId();
+    if (!uid) return;
+    const { start, end } = monthBounds(monthAnchor);
+    try {
+      const entries = await getFoodLogRange(uid, start, end);
+      setLoggedDays(new Set(entries.map((e) => e.date)));
+    } catch {
+      setLoggedDays(new Set());
+    }
+  }, []);
+
+  const openCalendar = () => {
+    setCalendarMonth(selectedDate);
+    setShowCalendar(true);
+    loadMonthDots(selectedDate);
+  };
+
+  const goToMonth = (delta: number) => {
+    const next = shiftMonth(calendarMonth, delta);
+    setCalendarMonth(next);
+    loadMonthDots(next);
+  };
+
+  const pickDay = (iso: string) => {
+    if (iso > todayISO()) return; // can't log the future
+    setSelectedDate(iso);
+    setShowCalendar(false);
+  };
+
+  // ── Saved meals ───────────────────────────────────────────────────────────
+  /** Snapshot everything in one meal slot so it can be re-logged in a tap. */
+  const handleSaveMeal = async () => {
+    const uid = currentUserId();
+    if (!uid || !saveMealFor) return;
+    const name = saveMealName.trim();
+    if (!name) return Alert.alert('Name it', 'Give this meal a name so you can find it later.');
+
+    const items = dayEntries
+      .filter((e) => e.meal === saveMealFor)
+      .map(({ id, date, meal, createdAt, ...item }) => item);
+    if (items.length === 0) return;
+
+    try {
+      await saveMeal(uid, name, items);
+      setSaveMealFor(null);
+      setSaveMealName('');
+      setSavedMeals(await getSavedMeals(uid));
+      Alert.alert('Saved', `"${name}" is in your Meals tab — log it any time in one tap.`);
+    } catch {
+      Alert.alert('Could not save', 'Something went wrong saving that meal. Try again.');
+    }
+  };
+
+  const handleLogSavedMeal = async (meal: SavedMeal) => {
+    const uid = currentUserId();
+    if (!uid) return;
+    setLoading(true);
+    try {
+      await logSavedMeal(uid, meal, selectedDate, selectedMeal);
+      setViewMode('diary');
+      await loadData();
+    } catch {
+      setLoading(false);
+      Alert.alert('Could not log', 'Something went wrong logging that meal. Try again.');
+    }
+  };
+
+  const handleDeleteSavedMeal = (meal: SavedMeal) => {
+    Alert.alert('Delete meal', `Remove "${meal.name}" from your saved meals?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const uid = currentUserId();
+          if (!uid) return;
+          await deleteSavedMeal(uid, meal.id);
+          setSavedMeals(await getSavedMeals(uid));
+        },
+      },
+    ]);
+  };
+
+  /** Re-log the same slot from the previous day. */
+  const handleCopyYesterday = async (slot: Meal) => {
+    const uid = currentUserId();
+    if (!uid) return;
+    const from = addDays(selectedDate, -1);
+    setLoading(true);
+    try {
+      const copied = await copyMealFromDate(uid, from, selectedDate, slot);
+      if (copied === 0) {
+        setLoading(false);
+        Alert.alert('Nothing to copy', `You didn't log any ${slot} on ${dayLabel(from).toLowerCase()}.`);
+        return;
+      }
+      await loadData();
+    } catch {
+      setLoading(false);
+      Alert.alert('Could not copy', 'Something went wrong copying that meal. Try again.');
+    }
+  };
+
+  /**
+   * A scanned barcode: our library first, then Open Food Facts. A hit opens the
+   * normal log screen so portions and the meal slot work as usual; a miss offers
+   * to create the food with the barcode already attached.
+   */
+  const handleBarcode = async (barcode: string) => {
+    setScannerOpen(false);
+    setScanBusy(true);
+    try {
+      const result = await lookupBarcode(barcode);
+
+      if (result.status === 'found') {
+        setSelectedFood(result.food);
+        setLogQty(String(result.food.servingSize));
+        setLogUnit(result.food.servingUnit);
+        setIsFavorite(false);
+        setViewMode('detail');
+        if (result.source === 'openfoodfacts') {
+          Alert.alert(
+            'From Open Food Facts',
+            `${result.food.name}. These numbers are crowd-sourced — check them against the label and correct anything that's off before logging.`,
+          );
+        }
+        return;
+      }
+
+      if (result.status === 'error') {
+        Alert.alert('Lookup failed', 'Could not reach the food database. Check your connection and try again.');
+        return;
+      }
+
+      Alert.alert(
+        'Not found',
+        `Nothing matched barcode ${barcode}. Add it yourself and it'll be there next time.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Add it',
+            onPress: () => {
+              resetCustomForm();
+              setScannedBarcode(barcode);
+              setShowCustomModal(true);
+            },
+          },
+        ],
+      );
+    } finally {
+      setScanBusy(false);
+    }
   };
 
   // ── Detail & Scaling Logic ────────────────────────────────────────────────
@@ -452,7 +747,7 @@ export default function NutritionScreen() {
 
     await logFood(uid, {
       name: selectedFood.name,
-      date: todayISO(),
+      date: selectedDate,
       meal: selectedMeal,
       calories: scaledMacros.calories,
       proteinG: scaledMacros.protein,
@@ -510,13 +805,37 @@ export default function NutritionScreen() {
   };
 
   // ── Custom Food Handler ───────────────────────────────────────────────────
+  const resetCustomForm = () => {
+    setCustomName(''); setCustomBrand(''); setCustomSize('100'); setCustomUnit('g');
+    setCustomCal(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
+    setCustomFiber(''); setCustomSugar(''); setCustomSodium('');
+    setScannedBarcode(null);
+    setEditingCustomFood(null);
+  };
+
+  /** Open the form on an existing food so it can be corrected. */
+  const openEditCustomFood = (food: FoodProduct) => {
+    setEditingCustomFood(food);
+    setCustomName(food.name);
+    setCustomBrand(food.brand && food.brand !== 'Custom Brand' ? food.brand : '');
+    setCustomSize(String(food.servingSize));
+    setCustomUnit(food.servingUnit);
+    setCustomCal(String(food.calories));
+    setCustomProtein(String(food.protein));
+    setCustomCarbs(String(food.carbs));
+    setCustomFat(String(food.fat));
+    setCustomFiber(food.fiber != null ? String(food.fiber) : '');
+    setCustomSugar(food.sugar != null ? String(food.sugar) : '');
+    setCustomSodium(food.sodium != null ? String(food.sodium) : '');
+    setShowCustomModal(true);
+  };
+
   const handleSaveCustomFood = async () => {
     const uid = currentUserId();
     if (!uid) return;
     if (!customName.trim()) return Alert.alert('Name required', 'Enter a product name.');
 
-    setLoading(true);
-    await createCustomFood(uid, {
+    const data = {
       name: customName,
       normalizedName: customName.trim().toLowerCase(),
       brand: customBrand || 'Custom Brand',
@@ -526,12 +845,45 @@ export default function NutritionScreen() {
       protein: parseFloat(customProtein) || 0,
       carbs: parseFloat(customCarbs) || 0,
       fat: parseFloat(customFat) || 0,
-    });
-    setCustomName(''); setCustomBrand(''); setCustomCal(''); setCustomProtein(''); setCustomCarbs(''); setCustomFat('');
+      // Optional — left undefined rather than 0 when blank, so "unknown"
+      // and "genuinely none" stay distinguishable.
+      fiber: customFiber.trim() ? parseFloat(customFiber) || 0 : undefined,
+      sugar: customSugar.trim() ? parseFloat(customSugar) || 0 : undefined,
+      sodium: customSodium.trim() ? parseFloat(customSodium) || 0 : undefined,
+      // Set when this food came from a barcode we couldn't find, so the next
+      // scan of the same product finds it.
+      barcode: scannedBarcode || editingCustomFood?.barcode || undefined,
+    };
+
+    setLoading(true);
+    // Editing only changes the food itself — anything already logged from it
+    // keeps the numbers it was logged with.
+    if (editingCustomFood) await updateCustomFood(uid, editingCustomFood.id, data);
+    else await createCustomFood(uid, data);
+
+    resetCustomForm();
     setShowCustomModal(false);
     await loadSearchTabsData();
     setSearchTab('my_foods');
     setLoading(false);
+  };
+
+  const handleDeleteCustomFood = (food: FoodProduct) => {
+    Alert.alert('Delete food', `Remove "${food.name}" from My Foods?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const uid = currentUserId();
+          if (!uid) return;
+          await deleteCustomFood(uid, food.id);
+          resetCustomForm();
+          setShowCustomModal(false);
+          await loadSearchTabsData();
+        },
+      },
+    ]);
   };
 
   // ── Delete Handler ──────────────────────────────────────────────────────────
@@ -610,8 +962,15 @@ export default function NutritionScreen() {
     const goalCals = targets?.dailyCalories || 0;
     const maxCals = Math.max(goalCals, ...progressDays.map((d) => d.calories), 1);
     const loggedDays = progressDays.filter((d) => d.calories > 0);
-    const avg = loggedDays.length
-      ? Math.round(loggedDays.reduce((a, d) => a + d.calories, 0) / loggedDays.length)
+    const mean = (pick: (d: typeof progressDays[number]) => number) =>
+      loggedDays.length ? Math.round(loggedDays.reduce((a, d) => a + pick(d), 0) / loggedDays.length) : 0;
+    const avg = mean((d) => d.calories);
+    // "On target" = within 10% of the calorie goal, the usual tracking tolerance.
+    const onTarget = goalCals
+      ? loggedDays.filter((d) => Math.abs(d.calories - goalCals) <= goalCals * 0.1).length
+      : 0;
+    const proteinHit = targets?.proteinG
+      ? loggedDays.filter((d) => d.proteinG >= targets.proteinG).length
       : 0;
     const CHART_H = 180;
     return (
@@ -672,6 +1031,44 @@ export default function NutritionScreen() {
                   })}
                 </View>
               </ScrollView>
+
+              {/* Averages across the days you actually logged */}
+              <Card style={styles.statsCard}>
+                <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>
+                  DAILY AVERAGE · {loggedDays.length} of {progressDays.length} days logged
+                </Typography>
+                <View style={styles.statsGrid}>
+                  <StatCell label="Calories" value={`${avg}`} unit="kcal" color={colors.warning} />
+                  <StatCell label="Protein" value={`${mean((d) => d.proteinG)}`} unit="g" color={MACRO_COLORS.protein} />
+                  <StatCell label="Carbs" value={`${mean((d) => d.carbsG)}`} unit="g" color={MACRO_COLORS.carbs} />
+                  <StatCell label="Fat" value={`${mean((d) => d.fatG)}`} unit="g" color={MACRO_COLORS.fat} />
+                  <StatCell label="Fibre" value={`${mean((d) => d.fiberG)}`} unit="g" color={MACRO_COLORS.fiber} />
+                </View>
+              </Card>
+
+              {/* How often you actually hit the numbers */}
+              <Card style={styles.statsCard}>
+                <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>
+                  CONSISTENCY
+                </Typography>
+                <View style={styles.statsGrid}>
+                  <StatCell
+                    label="Calories on target"
+                    value={`${onTarget}`}
+                    unit={`/ ${loggedDays.length} days`}
+                    color={colors.warning}
+                  />
+                  <StatCell
+                    label="Protein goal hit"
+                    value={`${proteinHit}`}
+                    unit={`/ ${loggedDays.length} days`}
+                    color={MACRO_COLORS.protein}
+                  />
+                </View>
+                <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10, marginTop: 4 }}>
+                  On target = within 10% of your {goalCals} kcal goal.
+                </Typography>
+              </Card>
             </>
           )}
         </ScrollView>
@@ -687,12 +1084,7 @@ export default function NutritionScreen() {
             <View style={styles.headerIconBox}>
               <Utensils size={18} color={colors.warning} />
             </View>
-            <View>
-              <Typography variant="h2">Nutrition Diary</Typography>
-              <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>
-                Log Food, Calorie targets & macro analysis
-              </Typography>
-            </View>
+            <Typography variant="h2">Nutrition Diary</Typography>
           </View>
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.headerIconBtn} onPress={() => loadProgress()}>
@@ -702,6 +1094,29 @@ export default function NutritionScreen() {
               <Edit2 size={18} color={colors.textMuted} />
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* Day picker — the diary is no longer stuck on today. */}
+        <View style={styles.dayStrip}>
+          <TouchableOpacity style={styles.dayArrow} onPress={() => setSelectedDate(addDays(selectedDate, -1))}>
+            <ChevronLeft size={18} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.dayLabelBtn} onPress={openCalendar}>
+            <View style={styles.dayLabelRow}>
+              <CalendarDays size={14} color={colors.warning} />
+              <Typography variant="bodyBold" style={{ fontSize: 14 }}>{dayLabel(selectedDate)}</Typography>
+            </View>
+            <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>
+              {selectedDate === todayISO() ? 'Tap for calendar' : fromISODate(selectedDate).toLocaleDateString('default', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </Typography>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.dayArrow, selectedDate >= todayISO() && styles.dayArrowDisabled]}
+            onPress={() => setSelectedDate(addDays(selectedDate, 1))}
+            disabled={selectedDate >= todayISO()}
+          >
+            <ChevronRight size={18} color={selectedDate >= todayISO() ? colors.textMuted : colors.text} />
+          </TouchableOpacity>
         </View>
 
         <ScrollView contentContainerStyle={styles.content}>
@@ -715,7 +1130,9 @@ export default function NutritionScreen() {
                 </View>
               </View>
               <View style={styles.ringsMeta}>
-                <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>TODAY'S INTAKE</Typography>
+                <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>
+                  {selectedDate === todayISO() ? "TODAY'S INTAKE" : `INTAKE · ${dayLabel(selectedDate).toUpperCase()}`}
+                </Typography>
                 <View style={styles.calorieNumberRow}>
                   <Typography variant="h1">{totals.dailyCalories}</Typography>
                   <Typography variant="body" color={colors.textMuted}>/ {t.dailyCalories}</Typography>
@@ -732,20 +1149,45 @@ export default function NutritionScreen() {
               </View>
             </View>
 
+            {/* Sugar & sodium — already stored per entry, never shown until now. */}
+            <View style={styles.microRow}>
+              <View style={styles.microCell}>
+                <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>Sugar</Typography>
+                <Typography variant="bodyBold" style={{ fontSize: 12 }}>{micros.sugarG.toFixed(1)}g</Typography>
+              </View>
+              <View style={styles.microDivider} />
+              <View style={styles.microCell}>
+                <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>Sodium</Typography>
+                <Typography variant="bodyBold" style={{ fontSize: 12 }}>{Math.round(micros.sodiumMg)}mg</Typography>
+              </View>
+              <View style={styles.microDivider} />
+              <View style={styles.microCell}>
+                <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>Fibre</Typography>
+                <Typography variant="bodyBold" style={{ fontSize: 12 }}>{totals.fiberG.toFixed(1)}g</Typography>
+              </View>
+            </View>
+
             {/* Water Tracker */}
             <View style={styles.waterRow}>
-              <View style={styles.waterLeft}>
+              <TouchableOpacity style={styles.waterLeft} onPress={openWaterSettings} activeOpacity={0.7}>
                 <Droplets size={16} color="#3b82f6" />
                 <Typography variant="bodyBold" color="#3b82f6" style={{ fontSize: 12 }}>
                   {waterMl} / {waterTarget} ml
                 </Typography>
                 <View style={styles.waterBarWrap}>
-                  <View style={[styles.waterBarFill, { width: `${waterPercent}%` as any }]} />
+                  <AnimatedBar percent={waterPercent} color="#3b82f6" style={styles.waterBarFill} />
                 </View>
-              </View>
+              </TouchableOpacity>
               <View style={styles.waterBtns}>
-                <TouchableOpacity style={styles.waterBtn} onPress={() => setWaterMl((w) => Math.min(w + 250, waterTarget))}>
-                  <Typography variant="caption" color="#3b82f6" style={{ fontSize: 10 }}>+250ml</Typography>
+                <TouchableOpacity
+                  style={[styles.waterBtn, waterMl === 0 && styles.waterBtnDisabled]}
+                  onPress={() => adjustWater(-waterStep)}
+                  disabled={waterMl === 0}
+                >
+                  <Minus size={12} color="#3b82f6" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.waterBtn} onPress={() => adjustWater(waterStep)}>
+                  <Typography variant="caption" color="#3b82f6" style={{ fontSize: 10 }}>+{waterStep}ml</Typography>
                 </TouchableOpacity>
               </View>
             </View>
@@ -785,9 +1227,17 @@ export default function NutritionScreen() {
                 {isExpanded && (
                   <View style={styles.mealItemList}>
                     {mealItems.length === 0 ? (
-                      <Typography variant="caption" color={colors.textMuted} style={{ fontStyle: 'italic', paddingVertical: 8 }}>
-                        No foods logged for {meal.label} yet.
-                      </Typography>
+                      <View style={styles.mealEmptyRow}>
+                        <Typography variant="caption" color={colors.textMuted} style={{ fontStyle: 'italic' }}>
+                          No foods logged for {meal.label} yet.
+                        </Typography>
+                        <TouchableOpacity style={styles.mealActionBtn} onPress={() => handleCopyYesterday(meal.key)}>
+                          <Copy size={12} color={colors.warning} />
+                          <Typography variant="caption" color={colors.warning} style={{ fontSize: 10 }}>
+                            Copy from yesterday
+                          </Typography>
+                        </TouchableOpacity>
+                      </View>
                     ) : (
                       mealItems.map((item) => (
                         <TouchableOpacity key={item.id} style={styles.foodItem} onPress={() => handleEditLoggedEntry(item)}>
@@ -806,12 +1256,160 @@ export default function NutritionScreen() {
                         </TouchableOpacity>
                       ))
                     )}
+
+                    {mealItems.length > 0 && (
+                      <TouchableOpacity
+                        style={styles.mealActionBtn}
+                        onPress={() => { setSaveMealFor(meal.key); setSaveMealName(''); }}
+                      >
+                        <Bookmark size={12} color={colors.warning} />
+                        <Typography variant="caption" color={colors.warning} style={{ fontSize: 10 }}>
+                          Save these {mealItems.length} as a meal
+                        </Typography>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 )}
               </Card>
             );
           })}
         </ScrollView>
+
+        {/* Water target and quick-add size. */}
+        <Modal visible={showWaterSettings} transparent animationType="slide" onRequestClose={() => setShowWaterSettings(false)}>
+          <View style={styles.overlay}>
+            <View style={styles.manualModal}>
+              <View style={styles.manualModalHeader}>
+                <Typography variant="h2">Water</Typography>
+                <TouchableOpacity onPress={() => setShowWaterSettings(false)}>
+                  <Typography variant="body" color={colors.textMuted}>Cancel</Typography>
+                </TouchableOpacity>
+              </View>
+
+              <Typography variant="caption" color={colors.textMuted} style={{ marginBottom: 6 }}>
+                DAILY TARGET (ML)
+              </Typography>
+              <TextInput
+                style={styles.manualInput}
+                keyboardType="number-pad"
+                placeholder="2500"
+                placeholderTextColor={colors.textMuted}
+                value={waterForm.target}
+                onChangeText={(v) => setWaterForm((f) => ({ ...f, target: v }))}
+              />
+
+              <Typography variant="caption" color={colors.textMuted} style={{ marginBottom: 6 }}>
+                ONE TAP ADDS (ML)
+              </Typography>
+              <TextInput
+                style={styles.manualInput}
+                keyboardType="number-pad"
+                placeholder="250"
+                placeholderTextColor={colors.textMuted}
+                value={waterForm.step}
+                onChangeText={(v) => setWaterForm((f) => ({ ...f, step: v }))}
+              />
+
+              <Typography variant="caption" color={colors.textMuted}>
+                Suggested for your bodyweight: {suggestWaterTarget((profile as any)?.weightKg)}ml.
+              </Typography>
+
+              <Button variant="primary" label="Save" onPress={handleSaveWaterPrefs} style={{ marginTop: 16 }} />
+            </View>
+          </View>
+        </Modal>
+
+        {/* Month grid — pick any past day; dots mark the days you logged food. */}
+        <Modal visible={showCalendar} transparent animationType="fade" onRequestClose={() => setShowCalendar(false)}>
+          <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setShowCalendar(false)}>
+            <TouchableOpacity style={styles.calendarCard} activeOpacity={1}>
+              <View style={styles.calendarHeader}>
+                <TouchableOpacity style={styles.dayArrow} onPress={() => goToMonth(-1)}>
+                  <ChevronLeft size={18} color={colors.text} />
+                </TouchableOpacity>
+                <Typography variant="bodyBold">
+                  {fromISODate(calendarMonth).toLocaleDateString('default', { month: 'long', year: 'numeric' })}
+                </Typography>
+                <TouchableOpacity
+                  style={[styles.dayArrow, monthBounds(calendarMonth).start >= monthBounds(todayISO()).start && styles.dayArrowDisabled]}
+                  onPress={() => goToMonth(1)}
+                  disabled={monthBounds(calendarMonth).start >= monthBounds(todayISO()).start}
+                >
+                  <ChevronRight size={18} color={colors.text} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.calendarWeekRow}>
+                {WEEKDAY_INITIALS.map((d, i) => (
+                  <Text key={i} style={styles.calendarWeekday}>{d}</Text>
+                ))}
+              </View>
+
+              <View style={styles.calendarGrid}>
+                {monthGrid(calendarMonth).map((iso, i) => {
+                  if (!iso) return <View key={`blank-${i}`} style={styles.calendarCell} />;
+                  const isFuture = iso > todayISO();
+                  const isSelected = iso === selectedDate;
+                  const isToday = iso === todayISO();
+                  return (
+                    <TouchableOpacity
+                      key={iso}
+                      style={styles.calendarCell}
+                      onPress={() => pickDay(iso)}
+                      disabled={isFuture}
+                    >
+                      <View style={[
+                        styles.calendarDay,
+                        isToday && styles.calendarDayToday,
+                        isSelected && styles.calendarDaySelected,
+                      ]}>
+                        <Text style={[
+                          styles.calendarDayText,
+                          isFuture && styles.calendarDayTextMuted,
+                          isSelected && styles.calendarDayTextSelected,
+                        ]}>
+                          {fromISODate(iso).getDate()}
+                        </Text>
+                      </View>
+                      <View style={[styles.calendarDot, loggedDays.has(iso) && styles.calendarDotOn]} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <TouchableOpacity style={styles.calendarTodayBtn} onPress={() => pickDay(todayISO())}>
+                <Typography variant="bodyBold" color={colors.warning} style={{ fontSize: 13 }}>Jump to today</Typography>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* Name-this-meal sheet (Alert.prompt is iOS-only, so it's a modal). */}
+        <Modal visible={!!saveMealFor} transparent animationType="slide" onRequestClose={() => setSaveMealFor(null)}>
+          <View style={styles.overlay}>
+            <View style={styles.manualModal}>
+              <View style={styles.manualModalHeader}>
+                <Typography variant="h2">Save this meal</Typography>
+                <TouchableOpacity onPress={() => setSaveMealFor(null)}>
+                  <Typography variant="body" color={colors.textMuted}>Cancel</Typography>
+                </TouchableOpacity>
+              </View>
+              <Typography variant="caption" color={colors.textMuted} style={{ marginBottom: 12 }}>
+                {dayEntries.filter((e) => e.meal === saveMealFor).length} item(s) from{' '}
+                {MEALS.find((m) => m.key === saveMealFor)?.label}. You'll be able to log it again in one tap.
+              </Typography>
+              <TextInput
+                style={styles.manualInput}
+                placeholder="e.g. My usual breakfast"
+                placeholderTextColor={colors.textMuted}
+                value={saveMealName}
+                onChangeText={setSaveMealName}
+                autoFocus
+              />
+              <Button variant="primary" label="Save meal" onPress={handleSaveMeal} style={{ marginTop: 16 }} />
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   }
@@ -845,9 +1443,21 @@ export default function NutritionScreen() {
           </View>
         </View>
 
+        {/* Scan a barcode instead of typing */}
+        <TouchableOpacity style={styles.scanRow} onPress={() => setScannerOpen(true)} disabled={scanBusy}>
+          {scanBusy ? (
+            <ActivityIndicator color={colors.warning} size="small" />
+          ) : (
+            <ScanLine size={16} color={colors.warning} />
+          )}
+          <Typography variant="bodyBold" color={colors.warning} style={{ fontSize: 13 }}>
+            {scanBusy ? 'Looking it up…' : 'Scan a barcode'}
+          </Typography>
+        </TouchableOpacity>
+
         {/* Tab Row */}
         <View style={styles.searchTabs}>
-          {(['search', 'recent', 'frequent', 'favorites', 'my_foods'] as const).map((tab) => (
+          {(['search', 'recent', 'frequent', 'favorites', 'my_foods', 'meals'] as const).map((tab) => (
             <TouchableOpacity 
               key={tab} 
               style={[styles.searchTabItem, searchTab === tab && styles.searchTabActive]}
@@ -860,6 +1470,47 @@ export default function NutritionScreen() {
           ))}
         </View>
 
+        {searchTab === 'meals' ? (
+          <FlatList
+            data={savedMeals}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ padding: spacing.md }}
+            ListHeaderComponent={
+              savedMeals.length > 0 ? (
+                <Typography variant="caption" color={colors.textMuted} style={{ marginBottom: spacing.sm }}>
+                  Tap a meal to log all of it into {MEALS.find((m) => m.key === selectedMeal)?.label}.
+                </Typography>
+              ) : null
+            }
+            ListEmptyComponent={
+              <Typography variant="caption" color={colors.textMuted} style={{ textAlign: 'center', marginTop: 40 }}>
+                No saved meals yet. Log a meal in your diary, then tap "Save these as a meal".
+              </Typography>
+            }
+            renderItem={({ item }) => {
+              const cals = item.items.reduce((a, i) => a + i.calories, 0);
+              const protein = item.items.reduce((a, i) => a + i.proteinG, 0);
+              return (
+                <TouchableOpacity
+                  style={styles.searchResultItem}
+                  onPress={() => handleLogSavedMeal(item)}
+                  onLongPress={() => handleDeleteSavedMeal(item)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Typography variant="bodyBold">{item.name}</Typography>
+                    <Typography variant="caption" color={colors.textMuted} numberOfLines={1}>
+                      {item.items.length} item{item.items.length === 1 ? '' : 's'} • {item.items.map((i) => i.name).join(', ')}
+                    </Typography>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Typography variant="bodyBold" color={colors.warning}>{Math.round(cals)} kcal</Typography>
+                    <Typography variant="caption" color={colors.textMuted}>{protein.toFixed(0)}P</Typography>
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        ) : (
         <FlatList
           data={listToRender}
           keyExtractor={(item) => item.id}
@@ -870,7 +1521,7 @@ export default function NutritionScreen() {
                 variant="outline" 
                 label="Create Custom Food" 
                 style={{ marginBottom: spacing.md }} 
-                onPress={() => setShowCustomModal(true)}
+                onPress={() => { resetCustomForm(); setShowCustomModal(true); }}
               />
             ) : null
           }
@@ -915,8 +1566,24 @@ export default function NutritionScreen() {
                   {item.protein}P • {item.carbs}C • {item.fat}F
                 </Typography>
               </View>
+              {searchTab === 'my_foods' && (
+                <TouchableOpacity
+                  style={styles.editFoodBtn}
+                  onPress={() => openEditCustomFood(item)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Edit2 size={16} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
           )}
+        />
+        )}
+
+        <BarcodeScanner
+          visible={scannerOpen}
+          onClose={() => setScannerOpen(false)}
+          onScanned={handleBarcode}
         />
 
         {/* Custom Food Creation Modal */}
@@ -924,8 +1591,8 @@ export default function NutritionScreen() {
           <View style={styles.overlay}>
             <View style={styles.manualModal}>
               <View style={styles.manualModalHeader}>
-                <Typography variant="h2">Create Custom Food</Typography>
-                <TouchableOpacity onPress={() => setShowCustomModal(false)}>
+                <Typography variant="h2">{editingCustomFood ? 'Edit Food' : 'Create Custom Food'}</Typography>
+                <TouchableOpacity onPress={() => { resetCustomForm(); setShowCustomModal(false); }}>
                   <Typography variant="body" color={colors.textMuted}>Cancel</Typography>
                 </TouchableOpacity>
               </View>
@@ -955,9 +1622,37 @@ export default function NutritionScreen() {
                   <Typography variant="caption" color="#f87171" style={{ fontSize: 10 }}>FATS (g)</Typography>
                   <TextInput style={styles.manualMacroInput} placeholder="0" placeholderTextColor={colors.textMuted} keyboardType="number-pad" value={customFat} onChangeText={setCustomFat} />
                 </View>
+                <View style={styles.manualMacroCell}>
+                  <Typography variant="caption" color="#22c55e" style={{ fontSize: 10 }}>FIBRE (g)</Typography>
+                  <TextInput style={styles.manualMacroInput} placeholder="—" placeholderTextColor={colors.textMuted} keyboardType="number-pad" value={customFiber} onChangeText={setCustomFiber} />
+                </View>
+                <View style={styles.manualMacroCell}>
+                  <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>SUGAR (g)</Typography>
+                  <TextInput style={styles.manualMacroInput} placeholder="—" placeholderTextColor={colors.textMuted} keyboardType="number-pad" value={customSugar} onChangeText={setCustomSugar} />
+                </View>
+                <View style={styles.manualMacroCell}>
+                  <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 10 }}>SODIUM (mg)</Typography>
+                  <TextInput style={styles.manualMacroInput} placeholder="—" placeholderTextColor={colors.textMuted} keyboardType="number-pad" value={customSodium} onChangeText={setCustomSodium} />
+                </View>
               </View>
+              <Typography variant="caption" color={colors.textMuted} style={{ fontSize: 11, marginTop: 8 }}>
+                All values per {customSize || '100'}{customUnit}. Fibre, sugar and sodium are optional.
+              </Typography>
 
-              <Button variant="primary" label="Save Custom Food" onPress={handleSaveCustomFood} style={{ marginTop: 16 }} />
+              <Button
+                variant="primary"
+                label={editingCustomFood ? 'Save changes' : 'Save Custom Food'}
+                onPress={handleSaveCustomFood}
+                style={{ marginTop: 16 }}
+              />
+              {editingCustomFood && (
+                <TouchableOpacity
+                  style={styles.deleteFoodBtn}
+                  onPress={() => handleDeleteCustomFood(editingCustomFood)}
+                >
+                  <Typography variant="bodyBold" color={colors.danger}>Delete this food</Typography>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </Modal>
@@ -1186,7 +1881,7 @@ function MacroBar({ label, consumed, target, percent, color }: {
         </Typography>
       </View>
       <View style={macroBarStyles.track}>
-        <View style={[macroBarStyles.fill, { width: `${percent}%` as any, backgroundColor: color }]} />
+        <AnimatedBar percent={percent} color={color} style={macroBarStyles.fill} />
       </View>
     </View>
   );
@@ -1272,6 +1967,101 @@ const styles = StyleSheet.create({
   calorieMeta: { flex: 1, gap: 4 },
   calorieNumberRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
   macroBarsRow: { flexDirection: 'row', gap: 8 },
+  // Day picker above the diary
+  dayStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  dayArrow: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceAlt,
+  },
+  dayArrowDisabled: { opacity: 0.35 },
+  dayLabelBtn: { alignItems: 'center', flex: 1 },
+  dayLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+
+  // Month grid picker
+  calendarCard: {
+    width: '100%',
+    maxWidth: 380,
+    alignSelf: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  calendarHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  calendarWeekRow: { flexDirection: 'row' },
+  calendarWeekday: {
+    flex: 1,
+    textAlign: 'center',
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calendarCell: { width: `${100 / 7}%`, alignItems: 'center', paddingVertical: 3 },
+  calendarDay: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarDayToday: { borderWidth: 1, borderColor: colors.warning },
+  calendarDaySelected: { backgroundColor: colors.warning },
+  calendarDayText: { color: colors.text, fontSize: 13, fontWeight: '600' },
+  calendarDayTextMuted: { color: colors.textMuted, opacity: 0.4 },
+  calendarDayTextSelected: { color: colors.bg, fontWeight: '800' },
+  calendarDot: { width: 4, height: 4, borderRadius: 2, marginTop: 3, backgroundColor: 'transparent' },
+  calendarDotOn: { backgroundColor: colors.warning },
+  calendarTodayBtn: { alignItems: 'center', paddingVertical: 8 },
+
+  // Sugar / sodium / fibre strip
+  microRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    paddingVertical: 8,
+    marginTop: 10,
+  },
+  microCell: { flex: 1, alignItems: 'center', gap: 2 },
+  microDivider: { width: 1, height: 22, backgroundColor: colors.border },
+
+  // Reports
+  statsCard: { padding: spacing.md, gap: spacing.sm },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  statCell: { minWidth: 76, gap: 2 },
+  statValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+
+  // Saved-meal / copy actions inside a meal card
+  mealEmptyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingVertical: 8,
+  },
+  mealActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+  },
+
   waterRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border,
@@ -1279,7 +2069,8 @@ const styles = StyleSheet.create({
   waterLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
   waterBarWrap: { flex: 1, height: 4, backgroundColor: colors.surfaceAlt, borderRadius: 2, overflow: 'hidden', marginLeft: 4 },
   waterBarFill: { height: '100%', backgroundColor: '#3b82f6', borderRadius: 2 },
-  waterBtns: { flexDirection: 'row', gap: 6 },
+  waterBtns: { flexDirection: 'row', gap: 6, alignItems: 'center' },
+  waterBtnDisabled: { opacity: 0.35 },
   waterBtn: {
     backgroundColor: 'rgba(59, 130, 246, 0.1)', borderColor: 'rgba(59, 130, 246, 0.3)',
     borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.md,
@@ -1343,6 +2134,21 @@ const styles = StyleSheet.create({
   backBtn: { padding: spacing.xs },
   searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: radius.md, paddingHorizontal: spacing.sm, marginLeft: spacing.sm },
   searchInput: { flex: 1, color: colors.text, paddingVertical: spacing.sm, marginLeft: spacing.xs, fontSize: 16 },
+  editFoodBtn: { paddingLeft: spacing.md, paddingVertical: 4 },
+  deleteFoodBtn: { alignItems: 'center', paddingTop: 14 },
+  scanRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.warning,
+  },
   searchTabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border },
   searchTabItem: { flex: 1, alignItems: 'center', paddingVertical: spacing.sm },
   searchTabActive: { borderBottomWidth: 2, borderBottomColor: colors.primary },

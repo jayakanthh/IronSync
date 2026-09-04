@@ -10,6 +10,7 @@ import { colors, spacing } from '../../theme/colors';
 import type { MuscleGroupId, MuscleIntensities, MuscleSetCounts } from '../../types/muscle';
 import { MUSCLE_GROUP_LABELS } from '../../types/muscle';
 import { MuscleAnatomyPair, type MuscleIntensityMap } from '../anatomy';
+import { useCurrentUser } from '../../context/CurrentUser';
 
 interface Props {
   intensities: MuscleIntensities;
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function BodyMuscleDiagram({ intensities, setCounts, onSelectMuscle }: Props) {
+  const { profile } = useCurrentUser();
   const [selected, setSelected] = useState<MuscleGroupId | null>(null);
 
   const selectedSets = useMemo(
@@ -27,7 +29,11 @@ export default function BodyMuscleDiagram({ intensities, setCounts, onSelectMusc
 
   return (
     <View style={styles.container}>
-      <MuscleAnatomyPair intensity={intensities as MuscleIntensityMap} gap={16} />
+      <MuscleAnatomyPair
+        gender={profile?.gender === 'female' ? 'female' : 'male'}
+        intensity={intensities as MuscleIntensityMap}
+        gap={16}
+      />
 
       <View style={styles.footer}>
         <Pressable style={styles.selectedCaption} disabled={!selected}>

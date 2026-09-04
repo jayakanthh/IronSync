@@ -48,3 +48,6 @@ Thumbs.db
 # Firebase service-account keys (secret — never commit)
 serviceAccount.json
 **/serviceAccount.json
+
+# OFF seeder resume state (local only)
+.off-seed-progress.json

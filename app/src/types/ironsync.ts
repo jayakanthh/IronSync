@@ -26,7 +26,6 @@ export interface UserProfile {
   goalDays: number;
   goalTargetDate: string;
   goalProgressPercent: number;
-  stepsToday: number;
   caloriesToday: number;
   activityMinutesToday: number;
 }
@@ -515,3 +514,8 @@ export interface NotificationItem {
 }
 
 export type AppNotification = NotificationItem;
+
+/** A history row with the name of whoever logged it — used by Home's feed. */
+export interface WorkoutHistoryItemWithCreator extends WorkoutHistoryItem {
+  creatorName?: string;
+}

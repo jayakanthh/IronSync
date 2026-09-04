@@ -13,11 +13,23 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Scale, Bell, Shield, Info, ChevronRight, ChevronLeft, Check, X, Edit2, Palette } from "lucide-react-native";
+import { Scale, Bell, Shield, Info, ChevronRight, ChevronLeft, Check, X, Edit2, Palette, Mail, Lock } from "lucide-react-native";
 import { colors, spacing, radius } from "../../theme/colors";
+import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
+import Avatar from "../../components/common/Avatar";
 import { useCurrentUser } from "../../context/CurrentUser";
+import type { PrivacySettings, ShareLevel } from "../../models/index";
 import { 
   signOutUser, 
+  changeEmail,
+  changePassword,
+  sendResetEmail,
+  setAvatar,
+  removeAvatar,
+  AVATAR_SIZE,
+  resolvePrivacy,
+  setPrivacy,
   isUsernameAvailable, 
   saveUsername, 
   validateUsernameFormat, 
@@ -25,6 +37,20 @@ import {
   updateUser,
   setMemberTrainingStatus
 } from "../../services/index";
+
+const SHARE_LEVELS: { key: ShareLevel; label: string }[] = [
+  { key: 'only_me', label: 'Only me' },
+  { key: 'friends', label: 'Friends' },
+  { key: 'everyone', label: 'Everyone' },
+];
+
+const PRIVACY_ROWS: { key: keyof PrivacySettings; label: string; sub: string }[] = [
+  { key: 'workouts', label: 'Workouts', sub: 'Your sessions in feeds and on your profile' },
+  { key: 'personalRecords', label: 'Personal records', sub: 'PRs and crew leaderboards' },
+  { key: 'streak', label: 'Streak', sub: 'Your current run of training days' },
+  { key: 'measurements', label: 'Body measurements', sub: 'Bodyweight and measurements' },
+  { key: 'nutrition', label: 'Nutrition', sub: 'Calories and macros' },
+];
 
 export default function SettingsScreen() {
   const navigation = useNavigation<any>();
@@ -43,6 +69,19 @@ export default function SettingsScreen() {
 
   // Stats visibility: friends can see your streak on your profile (default on).
   const [statsVisible, setStatsVisible] = useState(profile?.statsVisibleToFriends !== false);
+
+  // Per-area sharing, with anything the user hasn't chosen filled from defaults.
+  const [privacy, setPrivacyState] = useState<PrivacySettings>(() => resolvePrivacy(profile));
+
+  // Account security sheets
+  const [emailSheet, setEmailSheet] = useState(false);
+  const [passwordSheet, setPasswordSheet] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   // Username edit states
   const [editingUsername, setEditingUsername] = useState(false);
@@ -141,6 +180,130 @@ export default function SettingsScreen() {
     }
   };
 
+  const pickPhoto = async () => {
+    if (!profile) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1, // the resize below does the compressing
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    setPhotoBusy(true);
+    try {
+      // The photo is stored inside a Firestore document, so it has to be small:
+      // 256px at 0.6 quality lands around 10KB, against a 1MiB document limit.
+      const shrunk = await ImageManipulator.manipulateAsync(
+        result.assets[0].uri,
+        [{ resize: { width: AVATAR_SIZE, height: AVATAR_SIZE } }],
+        { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      if (!shrunk.base64) throw new Error("Could not read that image.");
+      await setAvatar(profile, `data:image/jpeg;base64,${shrunk.base64}`);
+      await refresh();
+    } catch (e: any) {
+      Alert.alert("Could not save photo", e?.message ?? "Try a different image.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const handlePhotoPress = () => {
+    if (!profile?.photoURL) return pickPhoto();
+    Alert.alert("Profile photo", undefined, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Choose a new one", onPress: pickPhoto },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          if (!profile) return;
+          setPhotoBusy(true);
+          try {
+            await removeAvatar(profile);
+            await refresh();
+          } finally {
+            setPhotoBusy(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const handlePrivacyChange = async (key: keyof PrivacySettings, value: ShareLevel) => {
+    if (!profile) return;
+    const previous = privacy;
+    setPrivacyState({ ...privacy, [key]: value }); // optimistic — it's one tap
+    try {
+      await setPrivacy(profile.id, privacy, key, value);
+    } catch {
+      setPrivacyState(previous);
+      Alert.alert("Could not save", "That privacy setting didn't save. Try again.");
+    }
+  };
+
+  const closeSheets = () => {
+    setEmailSheet(false);
+    setPasswordSheet(false);
+    setNewEmail("");
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+  };
+
+  const handleChangeEmail = async () => {
+    if (!newEmail.includes("@")) return Alert.alert("Check the address", "Enter a valid email address.");
+    if (!currentPassword) return Alert.alert("Password needed", "Enter your current password to confirm it's you.");
+    setAuthBusy(true);
+    try {
+      await changeEmail(newEmail, currentPassword);
+      closeSheets();
+      Alert.alert(
+        "Check your new inbox",
+        `We've sent a confirmation link to ${newEmail.trim()}. Your address changes once you open that link — until then you keep signing in with the old one.`,
+      );
+    } catch (e: any) {
+      Alert.alert("Could not change email", authErrorText(e));
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword.length < 6) return Alert.alert("Too short", "Use at least 6 characters.");
+    if (newPassword !== confirmPassword) return Alert.alert("They don't match", "The two new passwords are different.");
+    setAuthBusy(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      closeSheets();
+      Alert.alert("Password changed", "Use your new password next time you sign in.");
+    } catch (e: any) {
+      Alert.alert("Could not change password", authErrorText(e));
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const handleForgotPassword = () => {
+    if (!profile?.email) return;
+    Alert.alert("Send a reset link?", `We'll email ${profile.email} a link to set a new password.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Send",
+        onPress: async () => {
+          try {
+            await sendResetEmail(profile.email);
+            closeSheets();
+            Alert.alert("Sent", "Check your inbox for the reset link.");
+          } catch (e: any) {
+            Alert.alert("Could not send", authErrorText(e));
+          }
+        },
+      },
+    ]);
+  };
+
   const handleLogout = async () => {
     if (loggingOut) return;
     setLoggingOut(true);
@@ -192,6 +355,18 @@ export default function SettingsScreen() {
           <>
             <Text style={styles.sectionLabel}>ACCOUNT</Text>
             <View style={styles.card}>
+              <TouchableOpacity style={[styles.photoRow, styles.rowBorder]} onPress={handlePhotoPress} disabled={photoBusy}>
+                <View style={styles.toggleLeft}>
+                  <Avatar name={profile.displayName} uri={profile.photoURL} size={52} />
+                  <View>
+                    <Text style={styles.toggleLabel}>Profile photo</Text>
+                    <Text style={styles.toggleSub}>
+                      {profile.photoURL ? "Tap to change or remove" : "Tap to add one"}
+                    </Text>
+                  </View>
+                </View>
+                {photoBusy ? <ActivityIndicator color={colors.primary} /> : <ChevronRight size={16} color={colors.textMuted} />}
+              </TouchableOpacity>
               <Row label="Name" value={profile.displayName} />
               <Row label="Email" value={profile.email} />
               
@@ -316,6 +491,32 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Sign-in & security */}
+        <Text style={styles.sectionLabel}>SIGN-IN & SECURITY</Text>
+        <View style={styles.card}>
+          <TouchableOpacity style={[styles.actionRow, styles.rowBorder]} onPress={() => setEmailSheet(true)}>
+            <View style={styles.toggleLeft}>
+              <Mail size={16} color={colors.primary} />
+              <View>
+                <Text style={styles.toggleLabel}>Change email</Text>
+                <Text style={styles.toggleSub}>Confirmed from your new inbox first</Text>
+              </View>
+            </View>
+            <ChevronRight size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionRow} onPress={() => setPasswordSheet(true)}>
+            <View style={styles.toggleLeft}>
+              <Lock size={16} color={colors.primary} />
+              <View>
+                <Text style={styles.toggleLabel}>Change password</Text>
+                <Text style={styles.toggleSub}>With your current one, or a reset link</Text>
+              </View>
+            </View>
+            <ChevronRight size={16} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
         {/* Privacy */}
         <Text style={styles.sectionLabel}>PRIVACY</Text>
         <View style={styles.card}>
@@ -336,6 +537,35 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <Text style={styles.sectionLabel}>WHAT YOU SHARE</Text>
+        <View style={styles.card}>
+          {PRIVACY_ROWS.map((row, i) => (
+            <View key={row.key} style={[styles.shareRow, i < PRIVACY_ROWS.length - 1 && styles.rowBorder]}>
+              <View>
+                <Text style={styles.toggleLabel}>{row.label}</Text>
+                <Text style={styles.toggleSub}>{row.sub}</Text>
+              </View>
+              <View style={styles.segment}>
+                {SHARE_LEVELS.map((lvl) => {
+                  const active = privacy[row.key] === lvl.key;
+                  return (
+                    <TouchableOpacity
+                      key={lvl.key}
+                      style={[styles.segmentBtn, active && styles.segmentBtnActive]}
+                      onPress={() => handlePrivacyChange(row.key, lvl.key)}
+                    >
+                      <Text style={[styles.segmentText, active && styles.segmentTextActive]}>{lvl.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
+          <Text style={styles.privacyFootnote}>
+            Health notes are never shared — they stay on your device's account only.
+          </Text>
+        </View>
+
         {/* About */}
         <Text style={styles.sectionLabel}>ABOUT</Text>
         <View style={styles.card}>
@@ -345,6 +575,24 @@ export default function SettingsScreen() {
               <Text style={styles.toggleLabel}>App Version</Text>
             </View>
             <Text style={styles.infoValue}>1.0.0</Text>
+          </View>
+
+          {/* ODbL asks for attribution wherever their data is used. */}
+          <View style={styles.infoRow}>
+            <View style={styles.toggleLeft}>
+              <Info size={16} color={colors.textMuted} />
+              <Text style={styles.toggleLabel}>Food data</Text>
+            </View>
+            <Text style={styles.infoValue}>Open Food Facts (ODbL)</Text>
+          </View>
+
+          {/* MIT requires the notice to travel with the artwork. */}
+          <View style={styles.infoRow}>
+            <View style={styles.toggleLeft}>
+              <Info size={16} color={colors.textMuted} />
+              <Text style={styles.toggleLabel}>Muscle map</Text>
+            </View>
+            <Text style={styles.infoValue}>MuscleMap (MIT)</Text>
           </View>
         </View>
 
@@ -367,6 +615,97 @@ export default function SettingsScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Change email — Firebase mails the NEW address; nothing changes until
+          that link is opened, so a typo can't strand the account. */}
+      <Modal visible={emailSheet} transparent animationType="slide" onRequestClose={closeSheets}>
+        <View style={styles.sheetOverlay}>
+          <View style={styles.sheetCard}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Change email</Text>
+              <TouchableOpacity onPress={closeSheets}>
+                <X size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.sheetNote}>
+              Currently {profile?.email}. We'll send a confirmation link to the new address —
+              your email only changes once you open it.
+            </Text>
+            <TextInput
+              style={styles.sheetInput}
+              placeholder="New email address"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={newEmail}
+              onChangeText={setNewEmail}
+            />
+            <TextInput
+              style={styles.sheetInput}
+              placeholder="Current password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+            />
+            <TouchableOpacity style={styles.sheetPrimary} onPress={handleChangeEmail} disabled={authBusy}>
+              {authBusy ? (
+                <ActivityIndicator color={colors.primaryDark} />
+              ) : (
+                <Text style={styles.sheetPrimaryText}>Send confirmation</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Change password */}
+      <Modal visible={passwordSheet} transparent animationType="slide" onRequestClose={closeSheets}>
+        <View style={styles.sheetOverlay}>
+          <View style={styles.sheetCard}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Change password</Text>
+              <TouchableOpacity onPress={closeSheets}>
+                <X size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={styles.sheetInput}
+              placeholder="Current password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+            />
+            <TextInput
+              style={styles.sheetInput}
+              placeholder="New password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              value={newPassword}
+              onChangeText={setNewPassword}
+            />
+            <TextInput
+              style={styles.sheetInput}
+              placeholder="Confirm new password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+            />
+            <TouchableOpacity style={styles.sheetPrimary} onPress={handleChangePassword} disabled={authBusy}>
+              {authBusy ? (
+                <ActivityIndicator color={colors.primaryDark} />
+              ) : (
+                <Text style={styles.sheetPrimaryText}>Update password</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.sheetLink} onPress={handleForgotPassword}>
+              <Text style={styles.sheetLinkText}>Forgot it? Email me a reset link</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Units Selection Modal */}
       <Modal visible={showUnitsModal} transparent animationType="slide">
@@ -409,6 +748,27 @@ export default function SettingsScreen() {
       </Modal>
     </View>
   );
+}
+
+/** Firebase's codes are not something to show a user. */
+function authErrorText(e: any): string {
+  switch (e?.code) {
+    case "auth/wrong-password":
+    case "auth/invalid-credential":
+      return "That password isn't right.";
+    case "auth/email-already-in-use":
+      return "Another account already uses that email.";
+    case "auth/invalid-email":
+      return "That email address doesn't look valid.";
+    case "auth/weak-password":
+      return "Pick a longer password — at least 6 characters.";
+    case "auth/too-many-requests":
+      return "Too many attempts. Wait a minute and try again.";
+    case "auth/requires-recent-login":
+      return "For security, sign out and back in, then try again.";
+    default:
+      return e?.message ?? "Something went wrong. Try again.";
+  }
 }
 
 function Row({ label, value, last }: { label: string; value: string; last?: boolean }) {
@@ -459,6 +819,74 @@ const styles = StyleSheet.create({
   rowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   rowLabel: { color: colors.textMuted, fontSize: 15 },
   rowValue: { color: colors.text, fontSize: 15, fontWeight: "600", maxWidth: "60%" },
+  photoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+  },
+  shareRow: { paddingHorizontal: spacing.md, paddingVertical: 12, gap: 10 },
+  segment: {
+    flexDirection: "row",
+    backgroundColor: colors.bg,
+    borderRadius: radius.md,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  segmentBtn: { flex: 1, paddingVertical: 7, borderRadius: radius.sm, alignItems: "center" },
+  segmentBtnActive: { backgroundColor: colors.primary },
+  segmentText: { color: colors.textMuted, fontSize: 12, fontWeight: "700" },
+  segmentTextActive: { color: colors.primaryDark },
+  privacyFootnote: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 16,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+    fontStyle: "italic",
+  },
+  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.8)", justifyContent: "flex-end", padding: spacing.md },
+  sheetCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    padding: spacing.md,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  sheetHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  sheetTitle: { color: colors.text, fontSize: 18, fontWeight: "800" },
+  sheetNote: { color: colors.textMuted, fontSize: 12, lineHeight: 17 },
+  sheetInput: {
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    color: colors.text,
+    fontSize: 15,
+  },
+  sheetPrimary: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 13,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  sheetPrimaryText: { color: colors.primaryDark, fontSize: 15, fontWeight: "800" },
+  sheetLink: { alignItems: "center", paddingVertical: 10 },
+  sheetLinkText: { color: colors.primary, fontSize: 13, fontWeight: "700" },
   toggleRow: {
     flexDirection: "row",
     alignItems: "center",

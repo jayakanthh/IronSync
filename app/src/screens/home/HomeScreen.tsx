@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View, Switch } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useStartWorkoutScroll } from '../../components/common/StartWorkoutButton';
+import Avatar from '../../components/common/Avatar';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
   Sparkles,
@@ -8,7 +8,6 @@ import {
   Clock,
   Play,
   ChevronRight,
-  Footprints,
   Calendar,
   Users as UsersIcon,
   User as UserIcon,
@@ -16,7 +15,7 @@ import {
 import { colors, radius, spacing } from '../../theme/colors';
 import { SectionHeader } from '../../components/ui/index';
 import type { UserProfile, TrainingBuddy } from '../../types/ironsync';
-import { WorkoutHistoryItemWithCreator } from '../../data/mockData';
+import { WorkoutHistoryItemWithCreator } from '../../types/ironsync';
 
 interface HomeScreenProps {
   user: UserProfile;
@@ -27,6 +26,8 @@ interface HomeScreenProps {
   onSelectBuddyWorkout: (buddy: TrainingBuddy) => void;
   todayTitle?: string; // today's workout from the active plan
   todaySubtitle?: string;
+  /** 'rest' when the default routine schedules nothing for today. */
+  todayState?: 'workout' | 'rest' | 'none';
 }
 
 
@@ -34,6 +35,13 @@ interface HomeScreenProps {
  * Matches the reference layout: greeting, progress stats, today's plan
  * (image + gradient overlay), recent workouts.
  */
+/** 65 → "1h 5m", 45 → "45m". */
+function formatMinutes(total: number): string {
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 export default function HomeScreen({
   user,
   buddies,
@@ -43,11 +51,18 @@ export default function HomeScreen({
   onSelectBuddyWorkout,
   todayTitle,
   todaySubtitle,
+  todayState,
 }: HomeScreenProps) {
-  const [showFriendsWorkouts, setShowFriendsWorkouts] = useState(true);
+  // Drives the floating Start-New-Workout pill: it slides away as you scroll down.
+  const scrollProps = useStartWorkoutScroll();
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+      {...scrollProps}
+    >
       {/* Welcome Greeting */}
       <View>
         <Text style={styles.h1}>Welcome back, {user.name}</Text>
@@ -57,35 +72,6 @@ export default function HomeScreen({
       {/* YOUR PROGRESS Section */}
       <View style={styles.section}>
         <SectionHeader>YOUR PROGRESS</SectionHeader>
-
-        {/* Steps Card */}
-        <View style={styles.statCardRow}>
-          <View>
-            <Text style={styles.statLabel}>STEPS</Text>
-            <Text style={styles.statValueLg}>{user.stepsToday.toLocaleString()}</Text>
-          </View>
-          <View style={styles.ringWrap}>
-            <Svg width={44} height={44} viewBox="0 0 36 36" style={StyleSheet.absoluteFill}>
-              <Path
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                stroke={colors.border}
-                strokeWidth={2.5}
-                fill="none"
-              />
-              <Path
-                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                stroke={colors.primary}
-                strokeWidth={2.5}
-                strokeDasharray="45, 100"
-                strokeLinecap="round"
-                fill="none"
-                rotation={-90}
-                origin="18, 18"
-              />
-            </Svg>
-            <Footprints size={16} color={colors.primary} />
-          </View>
-        </View>
 
         {/* Calories & Activity Grid */}
         <View style={styles.gridRow}>
@@ -104,7 +90,9 @@ export default function HomeScreen({
               <Clock size={14} color={colors.textMuted} />
               <Text style={styles.statLabel}>ACTIVITY</Text>
             </View>
-            <Text style={styles.statValueMd}>1h 5m</Text>
+            <Text style={styles.statValueMd}>
+              {user.activityMinutesToday > 0 ? formatMinutes(user.activityMinutesToday) : '—'}
+            </Text>
           </View>
         </View>
       </View>
@@ -112,6 +100,14 @@ export default function HomeScreen({
       {/* TODAY'S PLAN Section */}
       <View style={styles.section}>
         <SectionHeader>TODAY'S PLAN</SectionHeader>
+        {todayState === 'rest' ? (
+          // Nothing scheduled — don't dress a rest day up as a workout.
+          <View style={styles.restCard}>
+            <Text style={styles.restEmoji}>😌</Text>
+            <Text style={styles.restTitle}>Take a rest today</Text>
+            <Text style={styles.restSubtitle}>{todaySubtitle}</Text>
+          </View>
+        ) : (
         <TouchableOpacity style={styles.planCard} onPress={onStartTodayPlan} activeOpacity={0.9}>
           <View style={styles.planImageWrap}>
             <Image
@@ -138,29 +134,15 @@ export default function HomeScreen({
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+        )}
       </View>
 
-      {/* RECENT WORKOUTS Section */}
+      {/* RECENT ACTIVITY — mine and everyone I train with, newest first */}
       <View style={styles.section}>
-        <View style={styles.sectionHeaderRow}>
-          <SectionHeader>RECENT WORKOUTS</SectionHeader>
-          <View style={styles.toggleContainer}>
-            <Text style={styles.toggleLabel}>Friends</Text>
-            <Switch
-              value={showFriendsWorkouts}
-              onValueChange={setShowFriendsWorkouts}
-              trackColor={{ false: colors.surfaceAlt, true: colors.primary + '80' }}
-              thumbColor={showFriendsWorkouts ? colors.primary : colors.textMuted}
-              style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
-            />
-          </View>
-        </View>
+        <SectionHeader>RECENT ACTIVITY</SectionHeader>
 
         <View style={{ gap: spacing.sm }}>
-          {((history || []).filter((item) => {
-            if (showFriendsWorkouts) return true;
-            return item.creatorName === user.name;
-          })).map((item) => (
+          {(history || []).map((item) => (
             <View key={item.id} style={styles.historyCard}>
               <View style={styles.historyCardHeader}>
                 <View style={styles.historyCardLeft}>
@@ -193,7 +175,9 @@ export default function HomeScreen({
               <View style={styles.historyStatsRow}>
                 <View style={styles.historyStatCol}>
                   <Text style={styles.historyStatLabel}>DURATION</Text>
-                  <Text style={styles.historyStatValue}>{item.durationMinutes}m</Text>
+                  <Text style={styles.historyStatValue}>
+                    {item.durationMinutes > 0 ? `${item.durationMinutes}m` : '—'}
+                  </Text>
                 </View>
                 <View style={styles.historyStatCol}>
                   <Text style={styles.historyStatLabel}>SETS</Text>
@@ -206,10 +190,7 @@ export default function HomeScreen({
               </View>
             </View>
           ))}
-          {((history || []).filter((item) => {
-            if (showFriendsWorkouts) return true;
-            return item.creatorName === user.name;
-          })).length === 0 && (
+          {(history || []).length === 0 && (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateText}>No recent workouts logged.</Text>
             </View>
@@ -235,7 +216,7 @@ export default function HomeScreen({
               >
                 <View style={styles.buddyLeft}>
                   <View>
-                    <Image source={{ uri: buddy.avatar }} style={styles.buddyAvatar} />
+                    <Avatar name={buddy.name} userId={buddy.id} size={40} />
                     <View style={styles.onlineDot} />
                   </View>
                   <View>
@@ -315,32 +296,11 @@ const styles = StyleSheet.create({
   sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   dots: { color: colors.textMuted, fontSize: 12, letterSpacing: 1.5 },
 
-  statCardRow: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   statLabel: { color: colors.textMuted, fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  statValueLg: { color: colors.text, fontSize: 24, fontWeight: '800', marginTop: 2 },
   statValueMd: { color: colors.text, fontSize: 20, fontWeight: '800' },
   statUnit: { color: colors.textMuted, fontSize: 12 },
   baselineRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4, marginTop: 4 },
 
-  ringWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#2b3339',
-    backgroundColor: '#1e2327',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 
   gridRow: { flexDirection: 'row', gap: spacing.sm },
   gridCell: { flex: 1 },
@@ -360,6 +320,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#14171a',
     overflow: 'hidden',
   },
+  restCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#14171a',
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    gap: 6,
+  },
+  restEmoji: { fontSize: 28 },
+  restTitle: { color: colors.text, fontSize: 17, fontWeight: '800' },
+  restSubtitle: { color: colors.textMuted, fontSize: 13, textAlign: 'center' },
   planImageWrap: { height: 112, width: '100%' },
   planImage: { width: '100%', height: '100%' },
   planBadge: {

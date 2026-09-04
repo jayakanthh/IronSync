@@ -54,6 +54,8 @@ export default function OnboardingScreen() {
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
   const [goal, setGoal] = useState<Goal>('maintain');
+  // Picks which body the muscle map draws — nothing else reads it.
+  const [gender, setGender] = useState<'male' | 'female'>('male');
   const [days, setDays] = useState<Weekday[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +86,7 @@ export default function OnboardingScreen() {
           heightCm: height ? Number(height) : undefined,
           weightKg,
           goal,
+          gender,
           trainingDays: days,
         }),
         'save profile',
@@ -120,6 +123,23 @@ export default function OnboardingScreen() {
         <Field label="Age" value={age} onChange={setAge} placeholder="24" />
         <Field label="Height (cm)" value={height} onChange={setHeight} placeholder="178" />
         <Field label="Weight (kg)" value={weight} onChange={setWeight} placeholder="80" />
+      </View>
+
+      <Text style={styles.label}>Body diagram</Text>
+      <Text style={styles.hint}>Which figure your muscle map is drawn on.</Text>
+      <View style={styles.pillRow}>
+        {(['male', 'female'] as const).map((g) => (
+          <TouchableOpacity
+            key={g}
+            style={[styles.pill, gender === g && styles.pillActive]}
+            onPress={() => setGender(g)}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.pillText, gender === g && styles.pillTextActive]}>
+              {g === 'male' ? 'Male' : 'Female'}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       <Text style={styles.label}>Goal</Text>

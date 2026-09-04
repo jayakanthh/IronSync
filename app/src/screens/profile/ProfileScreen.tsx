@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, Modal, ScrollView,
+  ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView,
   StyleSheet, Text, TextInput, TouchableOpacity, View, KeyboardAvoidingView, Platform, Dimensions
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import {
   Settings, Share2, TrendingUp, Award, Dumbbell, Clock, History, ChevronRight,
-  ChevronLeft, ChevronDown, ChevronUp, Camera, Target, Scale, Zap, Utensils, Activity, Calendar
+  ChevronLeft, ChevronDown, ChevronUp, Camera, Target, Scale, Zap, Utensils, Calendar
 } from 'lucide-react-native';
 import Svg, { Polyline, Rect, Line, Text as SvgText } from 'react-native-svg';
 import { colors, spacing, radius, useTheme } from '../../theme/colors';
@@ -16,7 +16,7 @@ import {
   currentUserId, signOutUser, getMeasurementHistory, getActiveGoal,
   getExercisesByIds, getWorkoutHistory, searchExercises, getPersonalRecords, getFoodLog
 } from '../../services/index';
-import { getAvatarBg } from '../../utils/formatting/avatarColors';
+import Avatar from '../../components/common/Avatar';
 import {
   getUnitSystem,
   convertWeightToDisplay,
@@ -28,14 +28,45 @@ import {
 } from '../../utils/formatting/units';
 import { logMeasurement, getGoals } from '../../services/measurements/measurements';
 import { todayISO } from '../../utils/formatting/dates';
-import type { MeasurementEntry, MeasurementGoal, MeasurementType, Workout, Exercise, PersonalRecord } from '../../models/index';
+import type { MeasurementEntry, MeasurementGoal, MeasurementType, Workout, Exercise, PersonalRecord, PhotoAngle, ProgressPhoto } from '../../models/index';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import {
+  PHOTO_WIDTH,
+  addProgressPhoto,
+  bookendsFor,
+  deleteProgressPhoto,
+  exifDate,
+  getProgressPhotos,
+  groupByDate,
+  weightNearDate,
+} from '../../services/index';
 import MuscleSilhouette, { aggregateMusclesFromExercises } from '../../components/common/MuscleSilhouette';
 import type { MuscleId } from '../../components/anatomy';
-import { THEME_HEAT_PALETTES, DEFAULT_HEAT_PALETTE } from '../../components/anatomy';
 import { mapRawToLovableMuscleId } from '../../utils/muscleHeatmap';
 import ExpandableMeasurementCard from '../../components/measurements/ExpandableMeasurementCard';
 
 type MeTab = 'overview' | 'exercises' | 'measures' | 'photos';
+
+/** Tab keys are internal; these are what you actually read on screen. */
+const ANGLES: PhotoAngle[] = ['front', 'side', 'back'];
+
+/** "2026-09-04" → "4 Sep" — the row label, kept short so the cells get the width. */
+function formatPhotoDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const now = new Date();
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleDateString('default',
+    sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: '2-digit' });
+}
+
+const ME_TAB_LABELS: Record<MeTab, string> = {
+  overview: 'Overview',
+  exercises: "PR's",
+  measures: 'Measurements',
+  photos: 'Photos',
+};
 type OverviewSubTab = 'recent' | 'muscles';
 
 // Standard 12 Muscle Taxonomy
@@ -356,14 +387,20 @@ export default function ProfileScreen() {
   const system = getUnitSystem(profile);
   const [activeTab, setActiveTab] = useState<MeTab>('overview');
 
+  // ── Progress photos ────────────────────────────────────────────────────────
+  const [photos, setPhotos] = useState<ProgressPhoto[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [viewingPhoto, setViewingPhoto] = useState<ProgressPhoto | null>(null);
+  const [comparing, setComparing] = useState<ProgressPhoto[] | null>(null);
+  // A backdated photo with no weigh-in near it waits here while we ask.
+  const [pendingPhoto, setPendingPhoto] = useState<Omit<ProgressPhoto, 'id' | 'createdAt'> | null>(null);
+  const [pendingWeight, setPendingWeight] = useState('');
+
   // Overview sub-tab state
   const [overviewSubTab, setOverviewSubTab] = useState<OverviewSubTab>('recent');
   const [expandedMuscle, setExpandedMuscle] = useState<string | null>(null);
 
-  const activeHeatPalette = useMemo(() => {
-    const themeId = (theme as any)?.id || 'signature';
-    return THEME_HEAT_PALETTES[themeId] || DEFAULT_HEAT_PALETTE;
-  }, [theme]);
 
   // Month selector state for Muscle Activity anatomy
   const [selectedMonthDate, setSelectedMonthDate] = useState<Date>(new Date());
@@ -396,7 +433,8 @@ export default function ProfileScreen() {
 
   // Responsive dimension variables
   const windowWidth = Dimensions.get('window').width;
-  const silhouetteSize = Math.floor((windowWidth - 48) / 2);
+  // screen padding (16×2) + card padding (16×2) + card border (1×2) + row gap (8)
+  const silhouetteSize = Math.floor((windowWidth - 74) / 2);
 
   const loadOverviewData = useCallback(async () => {
     const uid = currentUserId();
@@ -420,6 +458,146 @@ export default function ProfileScreen() {
     }
     finally { setLoadingOverview(false); }
   }, []);
+
+  const loadPhotos = useCallback(async () => {
+    if (!profile) return;
+    setLoadingPhotos(true);
+    try {
+      setPhotos(await getProgressPhotos(profile.id));
+    } catch (e) {
+      console.error('Could not load progress photos:', e);
+    } finally {
+      setLoadingPhotos(false);
+    }
+  }, [profile]);
+
+  /**
+   * Resize before storing: the image lives inside a Firestore document, so a
+   * camera original would blow the 1MiB limit on its own.
+   *
+   * `forDate` fills a specific empty slot. Left out, a library photo is filed
+   * under the day its EXIF says it was taken — backdating an old photo without
+   * making anyone type a date the file already knows.
+   */
+  const addPhoto = async (source: 'camera' | 'library', angle: PhotoAngle, forDate?: string) => {
+    if (!profile) return;
+    const picked =
+      source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ quality: 1 })
+        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, exif: true });
+    if (picked.canceled || !picked.assets?.[0]?.uri) return;
+    const asset = picked.assets[0];
+
+    // Camera shots are today by definition; library ones can be from any day.
+    const taken = forDate ?? (source === 'library' ? exifDate(asset.exif) ?? todayISO() : todayISO());
+
+    if (photos.some((p) => p.date === taken && p.angle === angle)) {
+      Alert.alert(
+        'Already have one',
+        `There's a ${angle} photo for ${taken}. Delete it first if you want to replace it.`,
+      );
+      return;
+    }
+
+    setPhotoBusy(true);
+    try {
+      const shrunk = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: PHOTO_WIDTH } }],
+        { compress: 0.55, format: ImageManipulator.SaveFormat.JPEG, base64: true },
+      );
+      if (!shrunk.base64) throw new Error('Could not read that image.');
+      const draft = {
+        date: taken,
+        angle,
+        image: `data:image/jpeg;base64,${shrunk.base64}`,
+      };
+
+      // Today's photo takes today's weight. An older one takes the weigh-in
+      // nearest that date if we logged one — and only if neither exists do we
+      // bother the user about it.
+      const logged = weightNearDate(historyByType.weight ?? [], taken);
+      const known = taken === todayISO() ? logged ?? profile.weightKg : logged;
+
+      if (known != null) {
+        await addProgressPhoto(profile.id, { ...draft, weightKg: known });
+        await loadPhotos();
+      } else {
+        setPendingWeight('');
+        setPendingPhoto(draft);
+      }
+    } catch (e: any) {
+      Alert.alert('Could not save photo', e?.message ?? 'Try another image.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  /** Finish saving a backdated photo, with or without the weight. */
+  const resolvePendingPhoto = async (weight?: number) => {
+    if (!profile || !pendingPhoto) return;
+    const draft = pendingPhoto;
+    setPendingPhoto(null);
+    setPhotoBusy(true);
+    try {
+      await addProgressPhoto(profile.id, { ...draft, weightKg: weight });
+      await loadPhotos();
+    } catch (e: any) {
+      Alert.alert('Could not save photo', e?.message ?? 'Try again.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  /** Tapping an empty slot fills exactly that day and angle. */
+  const handleAddFor = (angle: PhotoAngle, date?: string) => {
+    const where = date && date !== todayISO() ? ` for ${date}` : '';
+    Alert.alert(`${angle[0].toUpperCase() + angle.slice(1)} photo${where}`, 'Where from?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Take one', onPress: () => addPhoto('camera', angle, date) },
+      { text: 'Choose from library', onPress: () => addPhoto('library', angle, date) },
+    ]);
+  };
+
+  const handleDeletePhoto = (photo: ProgressPhoto) => {
+    Alert.alert('Delete photo', `Remove your ${photo.angle} photo from ${photo.date}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          if (!profile) return;
+          setViewingPhoto(null);
+          await deleteProgressPhoto(profile.id, photo.id);
+          await loadPhotos();
+        },
+      },
+    ]);
+  };
+
+  /** Oldest against newest, for one angle — the whole point of the gallery. */
+  const handleCompare = () => {
+    const options = (['front', 'side', 'back'] as PhotoAngle[]).filter(
+      (a) => photos.filter((p) => p.angle === a).length >= 2,
+    );
+    if (options.length === 0) {
+      Alert.alert(
+        'Not enough yet',
+        'Two photos of the same angle, taken on different days, and this puts them side by side.',
+      );
+      return;
+    }
+    Alert.alert('Compare', 'Which angle?', [
+      { text: 'Cancel', style: 'cancel' },
+      ...options.map((a) => ({
+        text: a[0].toUpperCase() + a.slice(1),
+        onPress: () => setComparing(bookendsFor(photos, a)),
+      })),
+    ]);
+  };
+
+  /** One row per day so the three angles line up across a single date. */
+  const photoDays = useMemo(() => groupByDate(photos), [photos]);
 
   const loadMeasuresData = useCallback(async () => {
     const uid = currentUserId();
@@ -487,6 +665,12 @@ export default function ProfileScreen() {
     loadMeasuresData();
     loadPrData();
   }, [loadOverviewData, loadMeasuresData, loadPrData]));
+
+  // Each photo document carries its own image, so this waits until the tab is
+  // opened rather than loading a gallery nobody asked for.
+  useEffect(() => {
+    if (activeTab === 'photos') loadPhotos();
+  }, [activeTab, loadPhotos]);
 
   useEffect(() => {
     if (!exerciseSearch.trim()) { setExerciseResults([]); return; }
@@ -611,36 +795,37 @@ export default function ProfileScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top, backgroundColor: theme.colors.background }]}>
       {/* Top Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
         <View style={styles.headerUser}>
-          <View style={[styles.avatar, { backgroundColor: getAvatarBg(profile.displayName || 'User') }]}>
-            <Text style={styles.avatarText}>
-              {(profile.displayName || 'U').slice(0, 2).toUpperCase()}
+          <Avatar name={profile.displayName} uri={profile.photoURL} size={44} />
+          <View style={styles.userInfo}>
+            <Text style={[styles.userName, { color: theme.colors.textPrimary }]} numberOfLines={1}>
+              {profile.displayName || 'Iron Athlete'}
+            </Text>
+            {/* username is stored with a leading '@' already — don't prepend another */}
+            <Text style={[styles.userSub, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+              {profile.username || '@athlete'}
             </Text>
           </View>
-          <View style={styles.userInfo}>
-            <Text style={styles.userName}>{profile.displayName || 'Iron Athlete'}</Text>
-            {/* username is stored with a leading '@' already — don't prepend another */}
-            <Text style={styles.userSub}>{profile.username || '@athlete'}</Text>
-          </View>
         </View>
-        <View style={styles.profileActions}>
-          <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Settings')}>
-            <Settings size={20} color={colors.text} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.headerIconBtn} onPress={() => navigation.navigate('Settings')}>
+          <Settings size={20} color={theme.colors.textPrimary} />
+        </TouchableOpacity>
       </View>
 
       {/* Main Tabs */}
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, { borderBottomColor: theme.colors.border }]}>
         {(['overview', 'exercises', 'measures', 'photos'] as MeTab[]).map(t => (
           <TouchableOpacity
             key={t}
-            style={[styles.tab, activeTab === t && styles.tabActive]}
+            style={[styles.tab, activeTab === t && { borderBottomColor: theme.colors.primary }]}
             onPress={() => setActiveTab(t)}
           >
-            <Text style={[styles.tabText, activeTab === t && styles.tabTextActive]}>
-              {t.toUpperCase()}
+            <Text
+              style={[styles.tabText, { color: theme.colors.textSecondary }, activeTab === t && { color: theme.colors.primary }]}
+              numberOfLines={1}
+            >
+              {ME_TAB_LABELS[t]}
             </Text>
           </TouchableOpacity>
         ))}
@@ -709,41 +894,29 @@ export default function ProfileScreen() {
                   <ActivityIndicator color={colors.primary} style={{ marginVertical: 40 }} />
                 ) : (
                   <View style={styles.bodyVizRow}>
-                    <View style={[styles.bodyVizItem, { width: silhouetteSize }]}>
+                    <View style={styles.bodyVizItem}>
                       <Text style={styles.bodyVizLabel}>ANTERIOR (FRONT)</Text>
                       <MuscleSilhouette
                         primaryMuscles={monthlyMuscles.primary}
                         secondaryMuscles={monthlyMuscles.secondary}
                         setCounts={monthlyMuscleSetCounts}
                         view="front"
-                        size={silhouetteSize - 16}
+                        size={silhouetteSize}
                       />
                     </View>
-                    <View style={[styles.bodyVizItem, { width: silhouetteSize }]}>
+                    <View style={styles.bodyVizItem}>
                       <Text style={styles.bodyVizLabel}>POSTERIOR (BACK)</Text>
                       <MuscleSilhouette
                         primaryMuscles={monthlyMuscles.primary}
                         secondaryMuscles={monthlyMuscles.secondary}
                         setCounts={monthlyMuscleSetCounts}
                         view="back"
-                        size={silhouetteSize - 16}
+                        size={silhouetteSize}
                       />
                     </View>
                   </View>
                 )}
 
-                {/* Heat Intensity Scale Legend */}
-                <View style={styles.legendContainer}>
-                  <View style={styles.heatScaleRow}>
-                    <Text style={[styles.heatScaleLabel, { color: theme.colors.textSecondary }]}>LOW</Text>
-                    <View style={styles.heatScaleBar}>
-                      {activeHeatPalette.map((col, idx) => (
-                        <View key={idx} style={[styles.heatScaleSegment, { backgroundColor: col }]} />
-                      ))}
-                    </View>
-                    <Text style={[styles.heatScaleLabel, { color: theme.colors.textSecondary }]}>HIGH</Text>
-                  </View>
-                </View>
               </View>
 
               {/* OVERVIEW SUB-TABS: [ RECENT EXERCISES ] [ MUSCLES ] */}
@@ -850,12 +1023,6 @@ export default function ProfileScreen() {
                       <Text style={styles.sectionLabel}>MUSCLES</Text>
                       <Text style={{ color: theme.colors.textSecondary, fontSize: 11, fontWeight: '600' }}>
                         THIS WEEK · {currentWeekRangeText}
-                      </Text>
-                    </View>
-                    <View style={styles.recoverySummaryBadge}>
-                      <Activity size={12} color={theme.colors.primary} />
-                      <Text style={[styles.recoverySummaryText, { color: theme.colors.primary }]}>
-                        Live Recovery
                       </Text>
                     </View>
                   </View>
@@ -1097,7 +1264,11 @@ export default function ProfileScreen() {
               </View>
 
               {activeGoal ? (
-                <View style={styles.goalPremiumCard}>
+                <TouchableOpacity
+                  style={styles.goalPremiumCard}
+                  activeOpacity={0.85}
+                  onPress={() => navigation.navigate('GoalDetails', { goalId: activeGoal.id })}
+                >
                   <View style={styles.goalTopRow}>
                     <View>
                       <Text style={styles.goalLabel}>ACTIVE GOAL</Text>
@@ -1105,7 +1276,10 @@ export default function ProfileScreen() {
                         {activeGoal.type === 'lose_weight' ? 'Weight Loss Target' : activeGoal.type === 'gain_weight' ? 'Weight Gain Target' : 'Body Weight Target'}
                       </Text>
                     </View>
-                    <Target size={18} color={colors.primary} />
+                    <View style={styles.goalTopIcons}>
+                      <Target size={18} color={colors.primary} />
+                      <ChevronRight size={16} color={colors.textMuted} />
+                    </View>
                   </View>
                   <View style={styles.goalBodyRow}>
                     <Text style={styles.goalDetailVal}>
@@ -1115,9 +1289,9 @@ export default function ProfileScreen() {
                       Start: {convertWeightToDisplay(activeGoal.startValue, system)} {getWeightUnit(system)}
                     </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ) : (
-                <TouchableOpacity style={styles.createGoalRowBtn} onPress={() => navigation.navigate('GoalSettings')}>
+                <TouchableOpacity style={styles.createGoalRowBtn} onPress={() => navigation.navigate('GoalSetup')}>
                   <Target size={16} color={colors.primary} />
                   <Text style={styles.createGoalRowText}>Set a target weight goal</Text>
                   <ChevronRight size={14} color={colors.primary} />
@@ -1142,7 +1316,7 @@ export default function ProfileScreen() {
                       onToggle={() => {
                         setExpandedMeasurement((prev) => (prev === t.type ? null : t.type));
                       }}
-                      onSetGoal={() => navigation.navigate('GoalSettings')}
+                      onSetGoal={() => navigation.navigate('GoalSetup')}
                     />
                   );
                 })}
@@ -1155,18 +1329,86 @@ export default function ProfileScreen() {
         {/* TAB 4: PHOTOS */}
         {/* ================================================================ */}
         {activeTab === 'photos' && (
-          <View style={styles.photosEmptyContainer}>
-            <View style={styles.photosIconCircle}>
-              <Camera size={28} color={colors.textMuted} />
+          <>
+            <View style={styles.photoActions}>
+              <TouchableOpacity
+                style={styles.photoAddBtn}
+                onPress={() => handleAddFor('front')}
+                disabled={photoBusy}
+              >
+                {photoBusy ? (
+                  <ActivityIndicator size="small" color={colors.primaryDark} />
+                ) : (
+                  <>
+                    <Camera size={16} color={colors.primaryDark} />
+                    <Text style={styles.photoAddText}>Add photo</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoCompareBtn} onPress={handleCompare}>
+                <Text style={styles.photoCompareText}>Compare</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.photosTitle}>Visual Progress Gallery</Text>
-            <Text style={styles.photosDesc}>
-              Upload and compare front, side, and back physique photos to track visual muscle growth and transformation.
+
+            {loadingPhotos ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.lg }} />
+            ) : photoDays.length === 0 ? (
+              <View style={styles.photosEmptyContainer}>
+                <View style={styles.photosIconCircle}>
+                  <Camera size={28} color={colors.textMuted} />
+                </View>
+                <Text style={styles.photosTitle}>No photos yet</Text>
+                <Text style={styles.photosDesc}>
+                  Take a front, side and back shot today, then again in a few weeks. Side by side
+                  is where you'll see what the scale misses.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.photoHeaderRow}>
+                  <Text style={styles.photoHeaderDate} />
+                  {ANGLES.map((a) => (
+                    <Text key={a} style={styles.photoHeaderAngle}>{a.toUpperCase()}</Text>
+                  ))}
+                </View>
+
+                {/* A row is a day; a gap is an angle that day is missing. */}
+                {photoDays.map((day) => (
+                  <View key={day.date} style={styles.photoDayRow}>
+                    <Text style={styles.photoRowDate}>{formatPhotoDate(day.date)}</Text>
+                    <View style={styles.photoRowCells}>
+                      {ANGLES.map((angle) => {
+                        const shot = day[angle];
+                        return shot ? (
+                          <TouchableOpacity
+                            key={angle}
+                            style={styles.photoCell}
+                            onPress={() => setViewingPhoto(shot)}
+                            onLongPress={() => handleDeletePhoto(shot)}
+                          >
+                            <Image source={{ uri: shot.image }} style={styles.photoThumb} />
+                          </TouchableOpacity>
+                        ) : (
+                          <TouchableOpacity
+                            key={angle}
+                            style={[styles.photoCell, styles.photoCellEmpty]}
+                            onPress={() => handleAddFor(angle, day.date)}
+                          >
+                            <Camera size={16} color={colors.textMuted} />
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
+
+            <Text style={styles.photoPrivacyNote}>
+              Progress photos stay on your account only. They're never shared with friends or a
+              crew, and nothing publishes them.
             </Text>
-            <TouchableOpacity style={styles.photosCta} onPress={() => Alert.alert('Coming Soon', 'Photo upload gallery is in development.')}>
-              <Text style={styles.photosCtaText}>Add Transformation Photo</Text>
-            </TouchableOpacity>
-          </View>
+          </>
         )}
       </ScrollView>
 
@@ -1207,6 +1449,120 @@ export default function ProfileScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      
+      {/* Only shown when a backdated photo has no weigh-in near its date.
+          Alert.prompt is iOS-only, so this is a real sheet. */}
+      <Modal
+        visible={!!pendingPhoto}
+        transparent
+        animationType="slide"
+        onRequestClose={() => resolvePendingPhoto(undefined)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalBackdrop}
+        >
+          <View style={[styles.modalSheet, { padding: spacing.md, gap: spacing.sm }]}>
+            <Text style={styles.modalTitle}>Roughly what did you weigh?</Text>
+            <Text style={styles.photosDesc}>
+              This photo is from {pendingPhoto ? formatPhotoDate(pendingPhoto.date) : ''} and there's
+              no weigh-in near that date. An approximate number is enough — it only labels the photo.
+            </Text>
+            <TextInput
+              style={styles.logFieldInput}
+              keyboardType="decimal-pad"
+              placeholder={`Weight in ${getWeightUnit(system)}`}
+              placeholderTextColor={colors.textMuted}
+              value={pendingWeight}
+              onChangeText={setPendingWeight}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={styles.photoAddBtn}
+              onPress={() => {
+                const typed = parseFloat(pendingWeight);
+                if (!typed || typed <= 0) {
+                  Alert.alert('Check the number', 'Enter a weight, or skip it.');
+                  return;
+                }
+                resolvePendingPhoto(convertWeightToCanonical(typed, system));
+              }}
+            >
+              <Text style={styles.photoAddText}>Save with weight</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.photoSkipBtn} onPress={() => resolvePendingPhoto(undefined)}>
+              <Text style={styles.photoSkipText}>Skip — save without a weight</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* One photo, full width */}
+      <Modal visible={!!viewingPhoto} transparent animationType="fade" onRequestClose={() => setViewingPhoto(null)}>
+        <View style={styles.photoViewerOverlay}>
+          {viewingPhoto && (
+            <>
+              <Image source={{ uri: viewingPhoto.image }} style={styles.photoViewerImage} resizeMode="contain" />
+              <View style={styles.photoViewerBar}>
+                <View>
+                  <Text style={styles.photoViewerMeta}>{viewingPhoto.date}</Text>
+                  <Text style={styles.compareSub}>
+                    {viewingPhoto.angle}
+                    {viewingPhoto.weightKg
+                      ? ` · ${convertWeightToDisplay(viewingPhoto.weightKg, system).toFixed(1)} ${getWeightUnit(system)}`
+                      : ''}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', gap: spacing.md }}>
+                  <TouchableOpacity onPress={() => handleDeletePhoto(viewingPhoto)}>
+                    <Text style={{ color: colors.danger, fontWeight: '700' }}>Delete</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setViewingPhoto(null)}>
+                    <Text style={{ color: '#fff', fontWeight: '700' }}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
+          )}
+        </View>
+      </Modal>
+
+      {/* Then and now, side by side — the point of taking them at all. */}
+      <Modal visible={!!comparing} transparent animationType="fade" onRequestClose={() => setComparing(null)}>
+        <View style={styles.photoViewerOverlay}>
+          {comparing && comparing.length === 2 && (
+            <>
+              <View style={styles.compareRow}>
+                {comparing.map((p, i) => (
+                  <View key={p.id} style={styles.compareCell}>
+                    <Image source={{ uri: p.image }} style={styles.compareImage} resizeMode="cover" />
+                    <Text style={styles.compareCaption}>{i === 0 ? 'THEN' : 'NOW'}</Text>
+                    <Text style={styles.compareSub}>{p.date}</Text>
+                    {p.weightKg ? (
+                      <Text style={styles.compareSub}>
+                        {convertWeightToDisplay(p.weightKg, system).toFixed(1)} {getWeightUnit(system)}
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+              {comparing[0].weightKg && comparing[1].weightKg ? (
+                <Text style={[styles.compareCaption, { marginTop: spacing.md }]}>
+                  {(() => {
+                    const diff = comparing[1].weightKg! - comparing[0].weightKg!;
+                    const shown = Math.abs(convertWeightToDisplay(diff, system)).toFixed(1);
+                    if (Math.abs(diff) < 0.05) return 'Same weight';
+                    return `${diff > 0 ? '+' : '−'}${shown} ${getWeightUnit(system)} between these`;
+                  })()}
+                </Text>
+              ) : null}
+              <TouchableOpacity style={styles.photoViewerBar} onPress={() => setComparing(null)}>
+                <Text style={{ color: '#fff', fontWeight: '700' }}>Close</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1215,22 +1571,18 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  headerUser: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#ffffff', fontSize: 16, fontWeight: '800' },
-  userInfo: { gap: 1 },
+  headerUser: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1, marginRight: spacing.sm },
+  userInfo: { gap: 1, flex: 1 },
   userName: { color: colors.text, fontSize: 16, fontWeight: '800' },
   userSub: { color: colors.textMuted, fontSize: 12 },
-  profileActions: { flexDirection: 'row', gap: spacing.sm },
   headerIconBtn: { padding: spacing.xs },
 
-  tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: spacing.xs },
+  tabs: { flexDirection: 'row', borderBottomWidth: 1, paddingHorizontal: spacing.xs },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 14, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabActive: { borderBottomColor: colors.primary },
-  tabText: { color: colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-  tabTextActive: { color: colors.primary },
+  tabText: { fontSize: 13, fontWeight: '700' },
 
-  tabContent: { padding: spacing.md, gap: spacing.md },
+  // The tab bar is an absolute overlay — without this the last card hides behind it.
+  tabContent: { padding: spacing.md, gap: spacing.md, paddingBottom: 110 },
 
   sectionLabel: { color: colors.text, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
 
@@ -1248,37 +1600,10 @@ const styles = StyleSheet.create({
   monthTitleText: { fontSize: 13, fontWeight: '900', letterSpacing: 1 },
   monthDateRangeText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
 
-  bodyVizRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, paddingVertical: spacing.xs },
-  bodyVizItem: { alignItems: 'center', gap: spacing.xs },
-  bodyVizLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  bodyVizRow: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.md },
+  bodyVizItem: { flex: 1, alignItems: 'center', gap: spacing.sm },
+  bodyVizLabel: { color: colors.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 2 },
 
-  legendContainer: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.sm,
-    alignItems: 'center',
-  },
-  heatScaleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  heatScaleBar: {
-    flexDirection: 'row',
-    height: 6,
-    width: 120,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  heatScaleSegment: {
-    flex: 1,
-    height: '100%',
-  },
-  heatScaleLabel: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
   legendRow: { flexDirection: 'row', justifyContent: 'center', gap: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 10, height: 10, borderRadius: 5 },
@@ -1315,19 +1640,6 @@ const styles = StyleSheet.create({
   },
 
   // Weekly Muscles Cards Styling
-  recoverySummaryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255,107,0,0.1)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-  },
-  recoverySummaryText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
 
   muscleCard: {
     borderWidth: 1,
@@ -1439,7 +1751,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, paddingVertical: 11, color: colors.text, fontSize: 15 },
 
   // Premium Exercise Cards (1RM & mini progress line)
-  exercisePremiumCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: 12, marginBottom: spacing.sm },
+  exercisePremiumCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: 12 },
   exCardTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   exThumbnail: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: 'rgba(72,187,149,0.15)', alignItems: 'center', justifyContent: 'center' },
   exThumbText: { color: colors.primary, fontSize: 13, fontWeight: '800' },
@@ -1461,6 +1773,7 @@ const styles = StyleSheet.create({
 
   goalPremiumCard: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.md, gap: 10 },
   goalTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  goalTopIcons: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   goalLabel: { color: colors.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 0.5 },
   goalTitle: { color: colors.text, fontSize: 15, fontWeight: '800', marginTop: 1 },
   goalBodyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
@@ -1479,6 +1792,79 @@ const styles = StyleSheet.create({
   meaTileUnit: { color: colors.primary, fontSize: 12, fontWeight: '700' },
 
   // Photos Tab premium empty state
+
+  photoActions: { flexDirection: 'row', gap: spacing.sm },
+  photoAddBtn: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+  },
+  photoAddText: { color: colors.primaryDark, fontSize: 14, fontWeight: '800' },
+  photoCompareBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+  },
+  photoCompareText: { color: colors.text, fontSize: 14, fontWeight: '700' },
+
+  photoHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
+  photoHeaderDate: { width: 48 },
+  photoHeaderAngle: {
+    flex: 1,
+    color: colors.textMuted,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textAlign: 'center',
+  },
+  photoDayRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  photoRowDate: { width: 48, color: colors.text, fontSize: 11, fontWeight: '700' },
+  photoRowCells: { flex: 1, flexDirection: 'row', gap: spacing.sm },
+  photoCell: { flex: 1 },
+  photoCellEmpty: {
+    aspectRatio: 3 / 4,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoThumb: {
+    width: '100%',
+    aspectRatio: 3 / 4,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceAlt,
+  },
+  photoSkipBtn: { alignItems: 'center', paddingVertical: 12 },
+  photoSkipText: { color: colors.textMuted, fontSize: 13, fontWeight: '600' },
+  photoPrivacyNote: {
+    color: colors.textMuted,
+    fontSize: 11,
+    lineHeight: 16,
+    fontStyle: 'italic',
+    marginTop: spacing.sm,
+  },
+
+  photoViewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)', justifyContent: 'center', padding: spacing.md },
+  photoViewerImage: { width: '100%', aspectRatio: 3 / 4, borderRadius: radius.lg },
+  photoViewerBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.md },
+  photoViewerMeta: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  compareRow: { flexDirection: 'row', gap: spacing.sm },
+  compareCell: { flex: 1, gap: 6 },
+  compareImage: { width: '100%', aspectRatio: 3 / 4, borderRadius: radius.md },
+  compareCaption: { color: '#fff', fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  compareSub: { color: '#b9bfc6', fontSize: 11, textAlign: 'center' },
+
   photosEmptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl, gap: spacing.md, minHeight: 380 },
   photosIconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   photosTitle: { color: colors.text, fontSize: 16, fontWeight: '800' },

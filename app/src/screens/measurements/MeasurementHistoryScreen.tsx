@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, radius } from '../../theme/colors';
+import { TAB_BAR_SPACE } from '../../theme/layout';
 import { useCurrentUser } from '../../context/CurrentUser';
 import { SimpleHeader } from '../../components/ui/SimpleHeader';
 import ProgressGraph, { TimeRange } from '../../components/ui/ProgressGraph';
@@ -218,7 +219,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
     marginBottom: spacing.sm,
   },
-  list: { paddingBottom: 40 },
+  list: { paddingBottom: TAB_BAR_SPACE },
   entryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

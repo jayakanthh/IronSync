@@ -27,12 +27,60 @@ export interface User {
   savedPlanIds?: string[]; // public plans the user has bookmarked (Workouts > Saved tab)
   unitSystem?: 'metric' | 'imperial';
   statsVisibleToFriends?: boolean; // let friends see your streak/stats on your profile (default: visible)
+  /** Per-area sharing. Anything unset falls back to the defaults in
+   *  DEFAULT_PRIVACY — see services/users/privacy.ts. */
+  privacy?: PrivacySettings;
+
+  /** Profile photo as a data URI (see services/users/publicProfile.ts). Absent = initials. */
+  photoURL?: string;
 
   username?: string;
   normalizedUsername?: string;
   
   // body progress & energy profile
   activityLevel?: 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active';
+}
+
+/**
+ * The slice of a user that other people can read. Full profiles are owner-only,
+ * so this is what makes someone's name and face show up in a friends list.
+ */
+export interface PublicProfile {
+  userId: string;
+  displayName: string;
+  username?: string;
+  /** Lowercased, '@' stripped — what username search matches against. */
+  normalizedUsername?: string;
+  /** Small JPEG as a data URI — a few KB, well inside Firestore's 1MiB limit. */
+  photo?: string;
+  updatedAt: number;
+
+  // Published only while the owner's privacy settings allow it. Absent means
+  // "not shared", which is why every field here is optional.
+  currentStreak?: number;
+  longestStreak?: number;
+  lastTrainedDate?: string;
+  trainingDays?: Weekday[];
+}
+
+/** Who can see one kind of data. */
+export type ShareLevel = 'only_me' | 'friends' | 'everyone';
+
+/**
+ * What you share, area by area. Health notes are deliberately absent: they are
+ * never shareable, and firestore.rules keeps them owner-only regardless.
+ */
+export interface PrivacySettings {
+  /** Your logged sessions in friends' feeds and on your profile. */
+  workouts: ShareLevel;
+  /** Personal records and the crew leaderboard. */
+  personalRecords: ShareLevel;
+  /** Current streak on your profile. */
+  streak: ShareLevel;
+  /** Bodyweight and measurements. */
+  measurements: ShareLevel;
+  /** Calories and macros. */
+  nutrition: ShareLevel;
 }
 
 /** A body measurement snapshot over time. */
@@ -47,6 +95,28 @@ export interface Measurement {
     thighs?: number;
     [part: string]: number | undefined;
   };
+}
+
+/** Which way you were facing. Comparisons only make sense angle-to-angle. */
+export type PhotoAngle = 'front' | 'side' | 'back';
+
+/**
+ * A physique photo, for seeing change that the scale doesn't show.
+ *
+ * ⚠️ Sensitive: these are pictures of the user's body. Owner-only in
+ * firestore.rules, never published to publicProfiles, and never shared with a
+ * crew — there is deliberately no privacy setting that can expose them.
+ */
+export interface ProgressPhoto {
+  id: string;
+  date: string; // YYYY-MM-DD
+  angle: PhotoAngle;
+  /** Downscaled JPEG as a data URI — Cloud Storage needs Blaze on this project. */
+  image: string;
+  /** Bodyweight on the day, so a comparison can show the numbers too. */
+  weightKg?: number;
+  note?: string;
+  createdAt: number;
 }
 
 /**
